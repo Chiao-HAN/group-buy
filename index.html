@@ -1045,3 +1045,246 @@ db.auth.onAuthStateChange(() => {
   });
 })();
 </script>
+<script>
+(() => {
+  const save = document.getElementById("prSave");
+  if (!save || typeof db === "undefined") return;
+
+  const el = id => document.getElementById(id);
+
+  const section = document.createElement("section");
+  section.innerHTML = `
+    <hr>
+    <h3>📋 已設定的優惠</h3>
+    <button id="prRefresh">查看／更新優惠清單</button>
+    <div id="prList"></div>
+  `;
+  el("prMessage").after(section);
+
+  const types = {
+    bundle_price: "固定組合價",
+    discount_rate: "滿件折扣",
+    second_item_price: "第二件特價",
+    discount_amount: "滿件折抵"
+  };
+
+  function priceText(p) {
+    switch (p.promotion_type) {
+      case "bundle_price":
+        return p.bundle_price + "元";
+      case "discount_rate":
+        return Number(
+          (p.discount_rate * 100).toFixed(2)
+        ) + "%";
+      case "second_item_price":
+        return "第二件" + p.second_item_price + "元";
+      case "discount_amount":
+        return "折抵" + p.discount_amount + "元";
+      default:
+        return "";
+    }
+  }
+
+  async function load() {
+    const list = el("prList");
+    const activity = el("prActivity").value;
+    list.textContent = "讀取中…";
+
+    if (!activity) {
+      list.textContent = "請先選擇團購活動";
+      return;
+    }
+
+    const { data, error } = await db
+      .from("promotions")
+      .select("*")
+      .eq("activity_id", activity)
+      .order("created_at", { ascending: false });
+
+    if (activity !== el("prActivity").value) return;
+
+    list.replaceChildren();
+
+    if (error) {
+      list.textContent = error.message;
+      return;
+    }
+
+    if (!data?.length) {
+      list.textContent = "尚未設定優惠";
+      return;
+    }
+
+    for (const p of data) {
+      const card = document.createElement("div");
+      card.style.cssText =
+        "border:1px solid #ddd;border-radius:12px;" +
+        "padding:12px;margin:12px 0;";
+
+      const title = document.createElement("h4");
+      title.textContent = p.promotion_name;
+
+      const info = document.createElement("p");
+      info.textContent =
+        (types[p.promotion_type] || p.promotion_type) +
+        "｜" + p.min_quantity + "件｜" +
+        priceText(p);
+
+      const status = document.createElement("p");
+      status.textContent = p.is_active
+        ? "🟢 啟用中" : "⚪ 已停用";
+
+      const edit = document.createElement("button");
+      edit.textContent = "✏️ 修改優惠";
+
+      const toggle = document.createElement("button");
+      toggle.textContent = p.is_active
+        ? "停用優惠" : "重新啟用";
+
+      toggle.onclick = async () => {
+        toggle.disabled = true;
+
+        const { error } = await db
+          .from("promotions")
+          .update({ is_active: !p.is_active })
+          .eq("id", p.id);
+
+        if (error) {
+          alert(error.message);
+          toggle.disabled = false;
+        } else {
+          await load();
+        }
+      };
+
+      const editor = document.createElement("div");
+      editor.hidden = true;
+
+      editor.innerHTML = `
+        <label>優惠名稱</label>
+        <input class="editName">
+
+        <label>優惠價格／折扣</label>
+        <input class="editValue"
+          type="number" min="0" step="0.01">
+
+        <label>備註</label>
+        <input class="editNotes">
+
+        <button class="editSave">確認修改</button>
+        <button class="editCancel">取消修改</button>
+        <p class="editMessage"></p>
+      `;
+
+      const field = name =>
+        editor.querySelector("." + name);
+
+      edit.onclick = () => {
+        editor.hidden = !editor.hidden;
+
+        field("editName").value = p.promotion_name;
+        field("editNotes").value = p.notes || "";
+
+        const values = {
+          bundle_price: p.bundle_price,
+          discount_rate: p.discount_rate * 100,
+          second_item_price: p.second_item_price,
+          discount_amount: p.discount_amount
+        };
+
+        field("editValue").value =
+          values[p.promotion_type] ?? "";
+      };
+
+      field("editCancel").onclick = () => {
+        editor.hidden = true;
+      };
+
+      field("editSave").onclick = async () => {
+        const name = field("editName").value.trim();
+        const raw = field("editValue").value;
+        const value = Number(raw);
+        const message = field("editMessage");
+
+        if (!name || !raw ||
+            !Number.isFinite(value) || value < 0) {
+          message.textContent = "請輸入正確資料";
+          return;
+        }
+
+        if (p.promotion_type === "discount_rate" &&
+            (value <= 0 || value > 100)) {
+          message.textContent = "折扣請輸入1至100";
+          return;
+        }
+
+        const update = {
+          promotion_name: name,
+          notes: field("editNotes").value
+        };
+
+        switch (p.promotion_type) {
+          case "bundle_price":
+            update.bundle_price = value;
+            break;
+          case "discount_rate":
+            update.discount_rate = value / 100;
+            break;
+          case "second_item_price":
+            update.second_item_price = value;
+            break;
+          case "discount_amount":
+            update.discount_amount = value;
+            break;
+          default:
+            message.textContent = "不支援的優惠類型";
+            return;
+        }
+
+        field("editSave").disabled = true;
+
+        const { error } = await db
+          .from("promotions")
+          .update(update)
+          .eq("id", p.id);
+
+        if (error) {
+          message.textContent = error.message;
+          field("editSave").disabled = false;
+        } else {
+          await load();
+        }
+      };
+
+      card.append(
+        title, info, status, edit, toggle, editor
+      );
+      list.append(card);
+    }
+  }
+
+  el("prRefresh").onclick = load;
+
+  el("prActivity").addEventListener("change", () => {
+    el("prList").replaceChildren();
+  });
+
+  const observer = new MutationObserver(() => {
+    if (el("prMessage").textContent.includes("儲存成功")) {
+      load();
+    }
+  });
+
+  observer.observe(el("prMessage"), {
+    childList: true,
+    characterData: true,
+    subtree: true
+  });
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      el("prList").replaceChildren();
+    }
+  });
+})();
+</script>
