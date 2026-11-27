@@ -99,3 +99,77 @@ document.getElementById("logout").onclick = async () => {
 </script>
 </body>
 </html>
+<script>
+const menu = document.createElement("div");
+menu.style.cssText = `
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin:20px 0;
+`;
+
+const features = [
+  "📅 團購活動",
+  "📦 商品管理",
+  "📋 喊單匯入",
+  "👥 客人訂單",
+  "🚚 到貨管理",
+  "💬 到貨通知",
+  "▥ 條碼結帳",
+  "☑️ 出貨核對",
+  "🖨️ 標籤列印",
+  "📊 訂單統計"
+];
+
+const status = document.createElement("p");
+status.style.fontSize = "14px";
+
+features.forEach(name => {
+  const btn = document.createElement("button");
+  btn.textContent = name;
+  btn.type = "button";
+  btn.style.cssText = `
+    background:#edf4ef;
+    color:#34443c;
+    border:1px solid #ccd5cf;
+    min-height:80px;
+    border-radius:12px;
+    font-size:16px;
+    margin:0;
+  `;
+  btn.onclick = () => {
+    status.textContent = name + "：功能建置中";
+  };
+  menu.appendChild(btn);
+});
+
+const test = document.createElement("button");
+test.textContent = "測試資料庫連線";
+test.type = "button";
+
+test.onclick = async () => {
+  status.textContent = "正在測試連線…";
+  try {
+    const {data,error} = await db
+      .from("products")
+      .select("id")
+      .limit(1);
+
+    status.textContent = error
+      ? "❌ 連線失敗：" + error.message
+      : "✅ 商品資料表查詢成功";
+  } catch(e) {
+    status.textContent = "❌ 測試失敗：" + e.message;
+  }
+};
+
+const logoutButton = document.getElementById("logout");
+
+home.insertBefore(menu,logoutButton);
+home.insertBefore(test,logoutButton);
+home.insertBefore(status,logoutButton);
+
+db.auth.onAuthStateChange(() => {
+  status.textContent = "";
+});
+</script>
