@@ -172,4 +172,245 @@ home.insertBefore(status,logoutButton);
 db.auth.onAuthStateChange(() => {
   status.textContent = "";
 });
+</script><script>
+(() => {
+  const fields = [
+    ["product_code","商品編號","text"],
+    ["product_name","商品名稱","text"],
+    ["barcode","商品條碼","text"],
+    ["category","商品分類","text"],
+    ["cost_price","成本價格","number"],
+    ["Selling_price","銷售價格","number"],
+    ["validity_days","有效天數","number"]
+  ];
+
+  const panel = document.createElement("section");
+  panel.hidden = true;
+  panel.innerHTML = `
+    <h2>📦 商品管理</h2>
+    <button type="button" id="productBack">返回首頁</button>
+    <input id="productSearch" placeholder="搜尋商品名稱、編號、條碼">
+    <h3>新增／修改商品</h3>
+    <form id="productForm">
+      ${fields.map(([key,label,type]) => `
+        <label>${label}</label>
+        <input id="p_${key}" type="${type}"
+          ${type === "number" ? 'min="0" step="' +
+          (key === "validity_days" ? "1" : "0.01") +
+          '"' : ""}
+          ${key === "product_name" ||
+          key === "product_code" ? "required" : ""}>
+      `).join("")}
+      <label>商品狀態</label>
+      <select id="p_is_active"
+        style="width:100%;padding:12px;font-size:16px">
+        <option value="true">啟用</option>
+        <option value="false">停用</option>
+      </select>
+      <button type="submit">儲存商品</button>
+      <button type="button" id="productClear"
+        style="background:#88948d">清空／新增商品</button>
+    </form>
+    <p id="productMessage" role="status"></p>
+    <hr>
+    <h3>商品清單</h3>
+    <div id="productList"></div>
+    <button type="button" id="productMore"
+      hidden>載入更多商品</button>
+  `;
+
+  home.insertBefore(panel, logoutButton);
+
+  const el = id => document.getElementById(id);
+  const form = el("productForm");
+  const msg = el("productMessage");
+  let editingId = null;
+  let products = [];
+  let busy = false;
+  let page = 0;
+  let version = 0;
+
+  function clearForm() {
+    editingId = null;
+    form.reset();
+    el("p_is_active").value = "true";
+  }
+
+  function renderProducts() {
+    const list = el("productList");
+    const keyword = el("productSearch")
+      .value.trim().toLowerCase();
+
+    list.replaceChildren();
+
+    const filtered = products.filter(p =>
+      [p.product_name,p.product_code,p.barcode,p.category]
+        .some(v => String(v ?? "")
+        .toLowerCase().includes(keyword))
+    );
+
+    if (!filtered.length) {
+      list.textContent = "目前沒有符合的商品";
+    }
+
+    filtered.forEach(p => {
+      const card = document.createElement("div");
+      card.style.cssText =
+        "border:1px solid #ccd5cf;border-radius:12px;padding:14px;margin:10px 0";
+
+      const name = document.createElement("strong");
+      name.textContent = p.product_name || "未命名商品";
+
+      const detail = document.createElement("p");
+      detail.style.textAlign = "left";
+      detail.textContent =
+        "編號：" + (p.product_code ?? "—") +
+        "｜售價：" + (p.Selling_price ?? "—") +
+        "｜" + (p.is_active ? "啟用" : "停用");
+
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.textContent = "修改商品";
+      edit.onclick = () => {
+        if (busy) return;
+        editingId = p.id;
+        fields.forEach(([key]) => {
+          el("p_" + key).value = p[key] ?? "";
+        });
+        el("p_is_active").value =
+          String(Boolean(p.is_active));
+        msg.textContent = "正在修改商品";
+        form.scrollIntoView({behavior:"smooth"});
+      };
+
+      card.append(name,detail,edit);
+      list.appendChild(card);
+    });
+  }
+
+  async function loadProducts(reset = true) {
+    const current = ++version;
+    if (reset) {
+      page = 0;
+      products = [];
+      renderProducts();
+    }
+
+    el("productMore").hidden = true;
+
+    const {data,error} = await db
+      .from("products")
+      .select("*")
+      .order("id",{ascending:false})
+      .range(page * 100,page * 100 + 99);
+
+    if (current !== version) return;
+
+    if (error) {
+      msg.textContent = "讀取失敗：" + error.message;
+      return;
+    }
+
+    products.push(...data);
+    page++;
+    renderProducts();
+    el("productMore").hidden = data.length < 100;
+  }
+
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (busy) return;
+
+    const payload = {};
+
+    fields.forEach(([key,label,type]) => {
+      const value = el("p_" + key).value.trim();
+      payload[key] = value === "" ? null :
+        type === "number" ? Number(value) : value;
+    });
+
+    if (!payload.product_name || !payload.product_code) {
+      msg.textContent = "請輸入商品名稱及編號";
+      return;
+    }
+
+    payload.is_active =
+      el("p_is_active").value === "true";
+
+    busy = true;
+    const save = form.querySelector('[type="submit"]');
+    save.disabled = true;
+    msg.textContent = "儲存中…";
+
+    try {
+      const query = editingId === null
+        ? db.from("products").insert(payload)
+        : db.from("products").update(payload)
+            .eq("id",editingId);
+
+      const {data,error} = await query.select("id").single();
+
+      if (error || !data) {
+        msg.textContent = "儲存失敗：" +
+          (error?.message || "沒有寫入資料");
+        return;
+      }
+
+      clearForm();
+      msg.textContent = "✅ 商品儲存成功";
+      await loadProducts();
+    } catch (err) {
+      msg.textContent = "操作失敗：" + err.message;
+    } finally {
+      busy = false;
+      save.disabled = false;
+    }
+  });
+
+  el("productClear").onclick = () => {
+    if (!busy) {
+      clearForm();
+      msg.textContent = "";
+    }
+  };
+
+  el("productSearch").oninput = renderProducts;
+  el("productMore").onclick = () => loadProducts(false);
+
+  el("productBack").onclick = () => {
+    if (busy) return;
+    panel.hidden = true;
+    menu.style.display = "grid";
+    test.hidden = false;
+    status.hidden = false;
+  };
+
+  const productButton = [...menu.querySelectorAll("button")]
+    .find(b => b.textContent.includes("商品管理"));
+
+  productButton.onclick = () => {
+    menu.style.display = "none";
+    test.hidden = true;
+    status.hidden = true;
+    panel.hidden = false;
+    clearForm();
+    msg.textContent = "";
+    loadProducts();
+  };
+
+  db.auth.onAuthStateChange((event,session) => {
+    if (!session) {
+      version++;
+      products = [];
+      clearForm();
+      el("productList").replaceChildren();
+      el("productSearch").value = "";
+      msg.textContent = "";
+      panel.hidden = true;
+      menu.style.display = "grid";
+      test.hidden = false;
+      status.hidden = false;
+    }
+  });
+})();
 </script>
