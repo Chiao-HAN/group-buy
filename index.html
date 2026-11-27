@@ -2122,3 +2122,342 @@ db.auth.onAuthStateChange(() => {
   });
 })();
 </script>
+<style>
+#quickActivity {
+  width: 100%;
+  grid-column: 1 / -1;
+  box-sizing: border-box;
+}
+#quickActivity[hidden] {
+  display: none !important;
+}
+#quickActivity details {
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 14px;
+  margin: 12px 0;
+}
+#quickActivity summary {
+  font-size: 17px;
+  font-weight: bold;
+  cursor: pointer;
+}
+#quickActivity input,
+#quickActivity select {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+  margin: 6px 0 12px;
+}
+#quickActivity input[type="checkbox"] {
+  width: auto;
+}
+#quickActivity label {
+  display: block;
+}
+.quick-product {
+  border-bottom: 1px solid #ddd;
+  padding: 12px 0;
+}
+</style>
+
+<script>
+(() => {
+  if (typeof db === "undefined") return;
+
+  const back = document.getElementById("actBack");
+  if (!back) return;
+
+  const button = document.createElement("button");
+  button.textContent = "✨ 快速新增活動";
+  back.after(button);
+
+  const box = document.createElement("section");
+  box.id = "quickActivity";
+  box.hidden = true;
+  button.after(box);
+
+  box.innerHTML = `
+    <h2>✨ 快速新增活動</h2>
+
+    <details open>
+      <summary>① 活動基本資料</summary>
+
+      <label>活動名稱</label>
+      <input id="qaName"
+        placeholder="例如：雪糕團購">
+
+      <label>開始日期</label>
+      <input id="qaStart" type="date">
+
+      <label>結單日期</label>
+      <input id="qaEnd" type="date">
+
+      <label>備註（選填）</label>
+      <input id="qaNotes">
+    </details>
+
+    <details open>
+      <summary>② 選擇商品及價格</summary>
+
+      <input id="qaSearch"
+        placeholder="搜尋商品名稱或編號">
+
+      <div id="qaProducts"></div>
+
+      <p id="qaCount">已選擇 0 項商品</p>
+    </details>
+
+    <details>
+      <summary>③ 優惠設定（選填）</summary>
+
+      <label>
+        <input id="qaUsePromo" type="checkbox">
+        本次活動有優惠
+      </label>
+
+      <div id="qaPromoFields" hidden>
+
+        <label>優惠名稱</label>
+        <input id="qaPromoName"
+          placeholder="例如：4支118元">
+
+        <label>優惠類型</label>
+        <select id="qaPromoType">
+          <option value="bundle_price">
+            固定組合價
+          </option>
+          <option value="discount_rate">
+            滿件折扣
+          </option>
+          <option value="second_item_price">
+            第二件特價
+          </option>
+          <option value="discount_amount">
+            滿件折抵
+          </option>
+        </select>
+
+        <label>優惠件數</label>
+        <input id="qaQty" type="number"
+          min="1" value="2">
+
+        <label id="qaValueLabel">優惠價格</label>
+        <input id="qaValue" type="number"
+          min="0" step="0.01">
+
+        <label>優惠代號（選填）</label>
+        <input id="qaPromoCode"
+          placeholder="例如：C">
+
+        <label>購買方式</label>
+        <select id="qaMode">
+          <option value="automatic">
+            依件數自動套用優惠
+          </option>
+          <option value="bundle">
+            整組購買
+          </option>
+        </select>
+
+        <label>
+          <input id="qaMix" type="checkbox">
+          允許不同商品混搭
+        </label>
+
+        <label>
+          <input id="qaRepeat" type="checkbox"
+            checked>
+          可重複享有優惠
+        </label>
+
+        <h4>適用優惠的商品</h4>
+        <div id="qaEligible"></div>
+      </div>
+    </details>
+
+    <button id="qaSave" disabled>
+      儲存並建立活動
+    </button>
+
+    <p id="qaMessage"></p>
+  `;
+
+  const el = id => document.getElementById(id);
+
+  function today() {
+    const d = new Date();
+    return d.getFullYear() + "-" +
+      String(d.getMonth() + 1).padStart(2,"0") +
+      "-" +
+      String(d.getDate()).padStart(2,"0");
+  }
+
+  el("qaStart").value = today();
+  el("qaEnd").value = today();
+
+  function updateSelected() {
+    const selected = [
+      ...box.querySelectorAll(".qaCheck:checked")
+    ];
+
+    el("qaCount").textContent =
+      "已選擇 " + selected.length + " 項商品";
+
+    const eligible = el("qaEligible");
+
+    const old = new Map(
+      [...eligible.querySelectorAll("input")]
+        .map(c => [c.value, c.checked])
+    );
+
+    eligible.replaceChildren();
+
+    for (const c of selected) {
+      const label = document.createElement("label");
+      const check = document.createElement("input");
+
+      check.type = "checkbox";
+      check.value = c.value;
+      check.className = "qaEligibleCheck";
+      check.checked = old.has(c.value)
+        ? old.get(c.value) : true;
+
+      label.append(check, " " + c.dataset.name);
+      eligible.append(label);
+    }
+  }
+
+  function addProduct(p) {
+    const row = document.createElement("div");
+    row.className = "quick-product";
+
+    row.dataset.search = (
+      p.product_name + " " +
+      (p.product_code || "")
+    ).toLowerCase();
+
+    const label = document.createElement("label");
+    const check = document.createElement("input");
+
+    check.type = "checkbox";
+    check.className = "qaCheck";
+    check.value = p.id;
+    check.dataset.name = p.product_name;
+
+    label.append(check, " " + p.product_name);
+
+    const fields = document.createElement("div");
+    fields.hidden = true;
+
+    fields.innerHTML = `
+      <label>活動價格</label>
+      <input class="qaPrice" type="number"
+        min="0" step="0.01">
+
+      <label>喊單代號（選填）</label>
+      <input class="qaCode"
+        placeholder="例如：A">
+
+      <label>
+        <input class="qaSingle"
+          type="checkbox" checked>
+        允許單品購買
+      </label>
+    `;
+
+    check.onchange = () => {
+      fields.hidden = !check.checked;
+      updateSelected();
+    };
+
+    row.append(label, fields);
+    el("qaProducts").append(row);
+  }
+
+  let loaded = false;
+
+  button.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden || loaded) return;
+
+    el("qaMessage").textContent = "讀取商品中…";
+
+    const { data, error } = await db
+      .from("products")
+      .select("id,product_name,product_code")
+      .order("product_name");
+
+    if (error) {
+      el("qaMessage").textContent = error.message;
+      return;
+    }
+
+    el("qaProducts").replaceChildren();
+
+    for (const p of data || []) {
+      addProduct(p);
+    }
+
+    loaded = true;
+
+    el("qaMessage").textContent =
+      "目前為介面測試，尚未開放正式儲存。";
+  };
+
+  el("qaSearch").oninput = () => {
+    const keyword = el("qaSearch").value
+      .trim().toLowerCase();
+
+    box.querySelectorAll(".quick-product")
+      .forEach(row => {
+        row.hidden =
+          !row.dataset.search.includes(keyword);
+      });
+  };
+
+  el("qaUsePromo").onchange = () => {
+    el("qaPromoFields").hidden =
+      !el("qaUsePromo").checked;
+  };
+
+  el("qaPromoType").onchange = () => {
+    const type = el("qaPromoType").value;
+
+    const labels = {
+      bundle_price: "組合優惠價格",
+      discount_rate: "折扣百分比（79折輸入79）",
+      second_item_price: "第二件價格",
+      discount_amount: "折抵金額"
+    };
+
+    el("qaValueLabel").textContent = labels[type];
+
+    el("qaQty").disabled =
+      type === "second_item_price";
+
+    if (type === "second_item_price") {
+      el("qaQty").value = 2;
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      loaded = false;
+      box.hidden = true;
+      el("qaProducts").replaceChildren();
+      el("qaEligible").replaceChildren();
+      el("qaName").value = "";
+      el("qaNotes").value = "";
+      el("qaSearch").value = "";
+      el("qaPromoName").value = "";
+      el("qaPromoCode").value = "";
+      el("qaValue").value = "";
+      el("qaUsePromo").checked = false;
+      el("qaPromoFields").hidden = true;
+      el("qaMessage").textContent = "";
+      updateSelected();
+    }
+  });
+})();
+</script>
