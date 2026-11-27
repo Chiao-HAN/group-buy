@@ -1535,3 +1535,283 @@ db.auth.onAuthStateChange(() => {
   });
 })();
 </script>
+<script>
+(() => {
+  if (typeof db === "undefined") return;
+
+  const menu = [...document.querySelectorAll("button")]
+    .find(b => b.textContent.includes("喊單匯入"));
+
+  if (!menu) return;
+
+  const box = document.createElement("section");
+  box.hidden = true;
+  menu.after(box);
+
+  box.innerHTML = `
+    <h3>📝 LINE 喊單匯入</h3>
+
+    <label>選擇團購活動</label>
+    <select id="imActivity"></select>
+
+    <label>貼上喊單文字</label>
+    <textarea id="imText" rows="8"
+      style="width:100%;box-sizing:border-box"
+      placeholder="王小姐 A+2、B+1&#10;簡小姐 B+3">
+    </textarea>
+
+    <button id="imPreview">辨識喊單與計價</button>
+    <button id="imClear">清除內容</button>
+    <p id="imMessage"></p>
+    <div id="imResult"></div>
+  `;
+
+  const el = id => document.getElementById(id);
+  let revision = 0;
+
+  const money = n =>
+    Math.round((n + Number.EPSILON) * 100) / 100;
+
+  menu.addEventListener("click", async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    const { data, error } = await db
+      .from("activities")
+      .select("id,activity_name")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      el("imMessage").textContent = error.message;
+      return;
+    }
+
+    el("imActivity").replaceChildren();
+
+    for (const a of data || []) {
+      el("imActivity").add(
+        new Option(a.activity_name, a.id)
+      );
+    }
+  });
+
+  function clearResult() {
+    revision++;
+    el("imResult").replaceChildren();
+    el("imMessage").textContent = "";
+  }
+
+  el("imText").oninput = clearResult;
+  el("imActivity").onchange = clearResult;
+
+  el("imClear").onclick = () => {
+    el("imText").value = "";
+    clearResult();
+  };
+
+  el("imPreview").onclick = async () => {
+    clearResult();
+
+    const current = revision;
+    const activity = el("imActivity").value;
+    const raw = el("imText").value.trim();
+    const result = el("imResult");
+    const msg = el("imMessage");
+
+    if (!activity || !raw) {
+      msg.textContent = "請選擇活動並貼上喊單文字";
+      return;
+    }
+
+    msg.textContent = "辨識中…";
+    el("imPreview").disabled = true;
+
+    try {
+      const [products, promotions] =
+        await Promise.all([
+          db.from("activity_products")
+            .select(
+              "id,option_code,activity_price," +
+              "products(product_name)"
+            )
+            .eq("activity_id", activity)
+            .eq("is_available", true),
+
+          db.from("promotions")
+            .select("*")
+            .eq("activity_id", activity)
+            .eq("is_active", true)
+        ]);
+
+      if (current !== revision) return;
+      if (products.error) throw products.error;
+      if (promotions.error) throw promotions.error;
+
+      const codes = new Map();
+
+      function addCode(code, item) {
+        if (!code) return;
+        code = code.trim().toUpperCase();
+
+        if (codes.has(code)) {
+          throw new Error("代號重複：" + code);
+        }
+
+        codes.set(code, item);
+      }
+
+      for (const p of products.data || []) {
+        addCode(p.option_code, {
+          name: p.products?.product_name || "商品",
+          price: Number(p.activity_price),
+          supported: true
+        });
+      }
+
+      for (const p of promotions.data || []) {
+        addCode(p.option_code, {
+          name: p.promotion_name,
+          price: Number(p.bundle_price),
+          supported:
+            p.promotion_type === "bundle_price" &&
+            p.bundle_price !== null
+        });
+      }
+
+      let total = 0;
+      let valid = 0;
+      let invalid = 0;
+
+      const lines = raw.split(/\r?\n/)
+        .filter(s => s.trim());
+
+      for (const original of lines) {
+        const line = original.normalize("NFKC")
+          .trim();
+
+        const card = document.createElement("div");
+        card.style.cssText =
+          "border:1px solid #ddd;" +
+          "border-radius:12px;padding:12px;" +
+          "margin:10px 0;";
+
+        const heading = document.createElement("h4");
+        heading.textContent = original;
+        card.append(heading);
+
+        const pattern =
+          /([A-Z0-9]{1,8})\s*\+\s*(\d+)/gi;
+
+        const matches = [...line.matchAll(pattern)];
+        const errors = [];
+        let subtotal = 0;
+
+        const customer = matches.length
+          ? line.slice(0, matches[0].index)
+              .replace(/[\s:：]+$/, "").trim()
+          : "";
+
+        if (!customer) {
+          errors.push("無法辨識客人名稱");
+        }
+
+        if (!matches.length) {
+          errors.push("無法辨識喊單代號");
+        }
+
+        if (matches.length) {
+          const remaining = line
+            .slice(matches[0].index)
+            .replace(pattern, "")
+            .replace(/[\s,，、;；]+/g, "");
+
+          if (remaining) {
+            errors.push("未辨識文字：" + remaining);
+          }
+        }
+
+        for (const m of matches) {
+          const code = m[1].toUpperCase();
+          const qty = Number(m[2]);
+          const item = codes.get(code);
+
+          if (!item) {
+            errors.push("找不到代號：" + code);
+            continue;
+          }
+
+          if (!Number.isSafeInteger(qty) || qty < 1) {
+            errors.push(code + " 的數量不正確");
+            continue;
+          }
+
+          if (!item.supported) {
+            errors.push(code + " 尚未支援此優惠計算");
+            continue;
+          }
+
+          if (!Number.isFinite(item.price) ||
+              item.price < 0) {
+            errors.push(code + " 的價格不正確");
+            continue;
+          }
+
+          const amount = money(item.price * qty);
+          subtotal = money(subtotal + amount);
+
+          const detail = document.createElement("p");
+          detail.textContent =
+            code + "｜" + item.name +
+            " × " + qty + "＝" + amount + "元";
+
+          card.append(detail);
+        }
+
+        const summary = document.createElement("p");
+
+        if (errors.length) {
+          invalid++;
+          summary.style.color = "#b91c1c";
+          summary.textContent =
+            "⚠️ " + errors.join("；");
+        } else {
+          valid++;
+          total = money(total + subtotal);
+
+          summary.textContent =
+            "客人：" + customer +
+            "｜小計：" + subtotal + "元";
+        }
+
+        card.append(summary);
+        result.append(card);
+      }
+
+      const footer = document.createElement("h3");
+      footer.textContent =
+        "有效訂單合計：" + total + "元";
+
+      result.append(footer);
+
+      msg.textContent =
+        "辨識成功 " + valid + " 筆，" +
+        "待修正 " + invalid + " 筆。" +
+        "目前僅預覽，尚未儲存訂單。";
+
+    } catch (e) {
+      msg.textContent = "辨識失敗：" + e.message;
+    } finally {
+      el("imPreview").disabled = false;
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      box.hidden = true;
+      el("imText").value = "";
+      el("imActivity").replaceChildren();
+      clearResult();
+    }
+  });
+})();
+</script>
