@@ -2783,3 +2783,80 @@ db.auth.onAuthStateChange(() => {
   };
 })();
 </script>
+<script>
+(() => {
+  const el = id => document.getElementById(id);
+  const quick = el("quickActivity");
+  const back = el("actBack");
+
+  if (!quick || !back) return;
+
+  const quickButton = quick.previousElementSibling;
+
+  if (quickButton) {
+    quickButton.textContent = "＋ 新增活動";
+  }
+
+  const advanced = document.createElement("details");
+
+  advanced.id = "activityAdvanced";
+  advanced.style.gridColumn = "1 / -1";
+  advanced.style.margin = "12px 0";
+  advanced.style.padding = "12px";
+  advanced.style.border = "1px solid #ddd";
+  advanced.style.borderRadius = "12px";
+
+  const summary = document.createElement("summary");
+
+  summary.textContent = "⚙️ 進階管理";
+  summary.style.cursor = "pointer";
+  summary.style.fontWeight = "bold";
+
+  advanced.append(summary);
+
+  const parent = back.parentElement;
+
+  const keywords = [
+    "設定購買方式",
+    "設定喊單代號",
+    "設定活動優惠",
+    "設定活動商品"
+  ];
+
+  const buttons = [...parent.children]
+    .filter(node =>
+      node.tagName === "BUTTON" &&
+      keywords.some(word =>
+        node.textContent.includes(word)
+      )
+    );
+
+  const groups = buttons.map(button => ({
+    button,
+    panel: button.nextElementSibling
+  }));
+
+  quick.after(advanced);
+
+  for (const group of groups) {
+    advanced.append(group.button);
+
+    if (group.panel &&
+        group.panel.tagName === "SECTION") {
+      advanced.append(group.panel);
+    }
+  }
+
+  const heading = quick.querySelector("h2");
+
+  if (heading) {
+    heading.textContent = "新增活動";
+  }
+
+  const save = el("qaSave");
+
+  if (save) {
+    save.textContent = "儲存全部設定";
+  }
+})();
+</script>
