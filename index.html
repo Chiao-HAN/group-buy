@@ -414,3 +414,224 @@ db.auth.onAuthStateChange(() => {
   });
 })();
 </script>
+<script>
+(() => {
+  const button = [...home.querySelectorAll("button")]
+    .find(b => b.textContent.includes("團購活動"));
+
+  const panel = document.createElement("section");
+  panel.hidden = true;
+
+  panel.innerHTML = `
+    <h2>📅 團購活動</h2>
+    <button id="actBack">返回首頁</button>
+    <h3>新增／修改活動</h3>
+
+    <form id="actForm">
+      <label>活動名稱</label>
+      <input id="actName" required>
+
+      <label>開始日期</label>
+      <input id="actStart" type="date" required>
+
+      <label>結束日期</label>
+      <input id="actEnd" type="date" required>
+
+      <label>活動狀態</label>
+      <select id="actStatus"
+        style="width:100%;padding:14px;border-radius:10px">
+        <option value="Draft">草稿</option>
+        <option value="Active">進行中</option>
+        <option value="Closed">已結束</option>
+      </select>
+
+      <label>備註</label>
+      <textarea id="actNotes"
+        style="width:100%;padding:12px;border-radius:10px"></textarea>
+
+      <button type="submit" id="actSave">儲存活動</button>
+      <button type="button" id="actClear">清空／新增活動</button>
+    </form>
+
+    <p id="actMsg"></p>
+    <hr>
+    <h3>活動清單</h3>
+    <div id="actList"></div>
+  `;
+
+  const logout = document.getElementById("logout");
+  home.insertBefore(panel, logout);
+
+  const el = id => document.getElementById(id);
+  const msg = el("actMsg");
+  let editingId = null;
+  let version = 0;
+
+  const labels = {
+    Draft: "草稿",
+    Active: "進行中",
+    Closed: "已結束"
+  };
+
+  function clearForm() {
+    editingId = null;
+    el("actForm").reset();
+    msg.textContent = "";
+  }
+
+  async function loadActivities() {
+    const current = ++version;
+    const list = el("actList");
+
+    list.textContent = "讀取中…";
+
+    const { data, error } = await db
+      .from("activities")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (current !== version) return;
+
+    list.replaceChildren();
+
+    if (error) {
+      list.textContent = "讀取失敗：" + error.message;
+      return;
+    }
+
+    if (!data.length) {
+      list.textContent = "目前尚無團購活動";
+      return;
+    }
+
+    data.forEach(a => {
+      const card = document.createElement("div");
+      card.style.cssText =
+        "border:1px solid #ccd5cf;border-radius:12px;padding:15px;margin:12px 0";
+
+      const title = document.createElement("strong");
+      title.textContent = a.activity_name;
+
+      const date = document.createElement("p");
+      date.textContent =
+        (a.start_date || "") + " ～ " +
+        (a.end_date || "");
+
+      const state = document.createElement("p");
+      state.textContent = labels[a.status] || a.status || "";
+
+      const edit = document.createElement("button");
+      edit.textContent = "修改活動";
+
+      edit.onclick = () => {
+        editingId = a.id;
+        el("actName").value = a.activity_name || "";
+        el("actStart").value = a.start_date || "";
+        el("actEnd").value = a.end_date || "";
+        el("actStatus").value = a.status || "Draft";
+        el("actNotes").value = a.notes || "";
+        msg.textContent = "";
+        panel.scrollIntoView({ behavior: "smooth" });
+      };
+
+      card.append(title, date, state, edit);
+      list.appendChild(card);
+    });
+  }
+
+  el("actForm").onsubmit = async e => {
+    e.preventDefault();
+
+    const start = el("actStart").value;
+    const end = el("actEnd").value;
+    const name = el("actName").value.trim();
+
+    if (!name) {
+      msg.textContent = "請輸入活動名稱";
+      return;
+    }
+
+    if (end < start) {
+      msg.textContent = "❌ 結束日期不能早於開始日期";
+      return;
+    }
+
+    const values = {
+      activity_name: name,
+      start_date: start,
+      end_date: end,
+      status: el("actStatus").value,
+      notes: el("actNotes").value
+    };
+
+    const current = version;
+    el("actSave").disabled = true;
+    msg.textContent = "儲存中…";
+
+    try {
+      const query = editingId
+        ? db.from("activities").update(values).eq("id", editingId)
+        : db.from("activities").insert(values);
+
+      const { error } = await query.select("id").single();
+
+      if (current !== version) return;
+
+      if (error) {
+        msg.textContent = "❌ 儲存失敗：" + error.message;
+        return;
+      }
+
+      clearForm();
+      msg.textContent = "✅ 活動儲存成功";
+      await loadActivities();
+
+    } catch (error) {
+      if (current === version) {
+        msg.textContent = "❌ 連線失敗，請重新確認";
+      }
+    } finally {
+      el("actSave").disabled = false;
+    }
+  };
+
+  el("actClear").onclick = clearForm;
+
+  let hiddenItems = [];
+
+  button.onclick = () => {
+    hiddenItems = [...home.children]
+      .filter(node =>
+        node !== panel &&
+        node !== logout &&
+        !node.hidden &&
+        getComputedStyle(node).display !== "none"
+      );
+
+    hiddenItems.forEach(node => node.hidden = true);
+
+    panel.hidden = false;
+    clearForm();
+    loadActivities();
+  };
+
+  el("actBack").onclick = () => {
+    version++;
+    panel.hidden = true;
+    hiddenItems.forEach(node => node.hidden = false);
+    hiddenItems = [];
+    clearForm();
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      version++;
+      panel.hidden = true;
+      hiddenItems.forEach(node => node.hidden = false);
+      hiddenItems = [];
+      clearForm();
+      el("actList").replaceChildren();
+    }
+  });
+})();
+</script>
