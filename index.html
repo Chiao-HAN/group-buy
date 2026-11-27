@@ -542,6 +542,8 @@ db.auth.onAuthStateChange(() => {
     });
   }
 
+  home.addEventListener("activities-updated", () => loadActivities());
+
   el("actForm").onsubmit = async e => {
     e.preventDefault();
 
@@ -920,6 +922,7 @@ db.auth.onAuthStateChange(() => {
 
       await loadProducts();
       updateType();
+      el("prRefresh")?.click();
     } catch (e) {
       msg.textContent = "讀取失敗：" + e.message;
     }
@@ -1109,12 +1112,12 @@ db.auth.onAuthStateChange(() => {
     list.replaceChildren();
 
     if (error) {
-      list.textContent = error.message;
+      list.textContent = "優惠讀取失敗：" + error.message;
       return;
     }
 
     if (!data?.length) {
-      list.textContent = "尚未設定優惠";
+      list.textContent = "此活動尚未設定優惠，請確認選擇的活動";
       return;
     }
 
@@ -1269,7 +1272,7 @@ db.auth.onAuthStateChange(() => {
   el("prRefresh").onclick = load;
 
   el("prActivity").addEventListener("change", () => {
-    el("prList").replaceChildren();
+    load();
   });
 
   const observer = new MutationObserver(() => {
@@ -1634,7 +1637,7 @@ db.auth.onAuthStateChange(() => {
         await Promise.all([
           db.from("activity_products")
             .select(
-              "id,option_code,activity_price," +
+              "id,option_code,activity_price,allow_single_purchase," +
               "products(product_name)"
             )
             .eq("activity_id", activity)
@@ -1650,6 +1653,10 @@ db.auth.onAuthStateChange(() => {
       if (products.error) throw products.error;
       if (promotions.error) throw promotions.error;
 
+      const auto = (promotions.data || []).filter(p => p.purchase_mode === "automatic");
+      const links = auto.length ? await db.from("promotion_products").select("*").in("promotion_id",auto.map(p=>p.id)).eq("is_active",true) : {data:[]};
+      if (links.error) throw links.error;
+      if (current !== revision) return;
       const codes = new Map();
 
       function addCode(code, item) {
@@ -1667,7 +1674,7 @@ db.auth.onAuthStateChange(() => {
         addCode(p.option_code, {
           name: p.products?.product_name || "商品",
           price: Number(p.activity_price),
-          supported: true
+          id: p.id, single: p.allow_single_purchase !== false, supported: true
         });
       }
 
@@ -1708,6 +1715,7 @@ db.auth.onAuthStateChange(() => {
         const matches = [...line.matchAll(pattern)];
         const errors = [];
         let subtotal = 0;
+        const quantities = new Map();
 
         const customer = matches.length
           ? line.slice(0, matches[0].index)
@@ -1759,6 +1767,8 @@ db.auth.onAuthStateChange(() => {
             continue;
           }
 
+          if (item.single === false) { errors.push(code + " 不允許單品購買"); continue; }
+          if (item.id != null) { const old = quantities.get(String(item.id)); quantities.set(String(item.id), {item, qty: (old?.qty || 0)+qty}); }
           const amount = money(item.price * qty);
           subtotal = money(subtotal + amount);
 
@@ -1770,6 +1780,30 @@ db.auth.onAuthStateChange(() => {
           card.append(detail);
         }
 
+        const used = new Set();
+        for (const promo of auto) {
+          const eligible = links.data.filter(l=>String(l.promotion_id)===String(promo.id));
+          const entries = [...quantities.values()].filter(x=>eligible.some(l=>String(l.activity_product_id)===String(x.item.id)));
+          if (!entries.length) continue;
+          const n = Number(promo.min_quantity);
+          if (!Number.isSafeInteger(n)||n<1 || eligible.some(l=>l.required_quantity!=null) || (promo.allow_mix && entries.length>1) || entries.some(x=>used.has(String(x.item.id)))) { errors.push("此優惠組合需人工確認："+promo.promotion_name); continue; }
+          let remaining = promo.repeat_discount === false ? 1 : Infinity;
+          for (const x of entries) {
+            const groups = Math.min(remaining,Math.floor(x.qty/n));
+            if (!groups) continue;
+            let groupPrice;
+            switch(promo.promotion_type){
+              case "bundle_price": groupPrice=Number(promo.bundle_price); break;
+              case "discount_rate": groupPrice=x.item.price*n*Number(promo.discount_rate); break;
+              case "discount_amount": groupPrice=Math.max(0,x.item.price*n-Number(promo.discount_amount)); break;
+              case "second_item_price": groupPrice=x.item.price+Number(promo.second_item_price); break;
+              default: errors.push("不支援的優惠"); continue;
+            }
+            const discount=money(Math.max(0,x.item.price*n-groupPrice)*groups);
+            subtotal=money(subtotal-discount); remaining-=groups; used.add(String(x.item.id));
+            const detail=document.createElement("p"); detail.textContent=promo.promotion_name+" × "+groups+"｜折抵 "+discount+"元"; card.append(detail);
+          }
+        }
         const summary = document.createElement("p");
 
         if (errors.length) {
@@ -2734,6 +2768,7 @@ db.auth.onAuthStateChange(() => {
         "✅ 活動建立成功：" + name +
         "，共 " + products.length + " 項商品" +
         (promo ? "，1項優惠" : "");
+      home.dispatchEvent(new Event("activities-updated"));
 
     } catch (e) {
       let cleanupOK = true;
@@ -2851,6 +2886,9 @@ db.auth.onAuthStateChange(() => {
     }
   }
 
+  const oldForm = el("actForm");
+  if (oldForm) { const h = oldForm.previousElementSibling; if(h?.tagName === "H3") advanced.append(h); advanced.append(oldForm, el("actMsg")); }
+  el("actList").addEventListener("click", () => { advanced.open = true; });
   const heading = quick.querySelector("h2");
 
   if (heading) {
