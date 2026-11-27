@@ -1288,3 +1288,250 @@ db.auth.onAuthStateChange(() => {
   });
 })();
 </script>
+<script>
+(() => {
+  const back = document.getElementById("actBack");
+  if (!back || typeof db === "undefined") return;
+
+  const button = document.createElement("button");
+  button.textContent = "🔤 設定喊單代號";
+  back.after(button);
+
+  const box = document.createElement("section");
+  box.hidden = true;
+  button.after(box);
+
+  box.innerHTML = `
+    <h3>🔤 喊單代號設定</h3>
+
+    <label>選擇團購活動</label>
+    <select id="ocActivity"></select>
+
+    <p>請設定商品及優惠的喊單代號。
+    沒有代號的項目可以留空。</p>
+
+    <h4>📦 商品代號</h4>
+    <div id="ocProducts"></div>
+
+    <h4>🏷️ 優惠組合代號</h4>
+    <div id="ocPromotions"></div>
+
+    <button id="ocSave">儲存喊單代號</button>
+    <p id="ocMessage"></p>
+  `;
+
+  const el = id => document.getElementById(id);
+  const msg = el("ocMessage");
+  let revision = 0;
+
+  function addRow(container, item, name, table) {
+    const row = document.createElement("div");
+    row.style.cssText =
+      "border:1px solid #ddd;border-radius:10px;" +
+      "padding:12px;margin:10px 0;";
+
+    const label = document.createElement("label");
+    label.textContent = name;
+
+    const input = document.createElement("input");
+    input.placeholder = "例如：A";
+    input.value = item.option_code || "";
+    input.maxLength = 8;
+    input.dataset.id = item.id;
+    input.dataset.table = table;
+    input.dataset.original = item.option_code || "";
+    input.className = "ocCode";
+
+    input.oninput = () => {
+      input.value = input.value
+        .normalize("NFKC").toUpperCase();
+    };
+
+    row.append(label, input);
+    container.append(row);
+  }
+
+  async function load() {
+    const current = ++revision;
+    const activity = el("ocActivity").value;
+
+    el("ocProducts").replaceChildren();
+    el("ocPromotions").replaceChildren();
+    el("ocSave").disabled = true;
+    msg.textContent = "讀取中…";
+
+    if (!activity) {
+      msg.textContent = "請先建立團購活動";
+      return;
+    }
+
+    try {
+      const [products, promotions] =
+        await Promise.all([
+          db.from("activity_products")
+            .select(
+              "id,option_code,activity_price," +
+              "products(product_name)"
+            )
+            .eq("activity_id", activity)
+            .eq("is_available", true),
+
+          db.from("promotions")
+            .select(
+              "id,promotion_name,option_code,is_active"
+            )
+            .eq("activity_id", activity)
+        ]);
+
+      if (current !== revision) return;
+      if (products.error) throw products.error;
+      if (promotions.error) throw promotions.error;
+
+      for (const p of products.data || []) {
+        addRow(
+          el("ocProducts"),
+          p,
+          (p.products?.product_name || "商品") +
+          "｜" + p.activity_price + "元",
+          "activity_products"
+        );
+      }
+
+      for (const p of promotions.data || []) {
+        addRow(
+          el("ocPromotions"),
+          p,
+          p.promotion_name +
+          (p.is_active ? "" : "（已停用）"),
+          "promotions"
+        );
+      }
+
+      if (!products.data?.length) {
+        el("ocProducts").textContent =
+          "尚未設定活動商品";
+      }
+
+      if (!promotions.data?.length) {
+        el("ocPromotions").textContent =
+          "尚未設定活動優惠";
+      }
+
+      msg.textContent = "";
+      el("ocSave").disabled = false;
+
+    } catch (e) {
+      msg.textContent = "讀取失敗：" + e.message;
+    }
+  }
+
+  button.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    el("ocSave").disabled = true;
+
+    const { data, error } = await db
+      .from("activities")
+      .select("id,activity_name")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      msg.textContent = error.message;
+      return;
+    }
+
+    el("ocActivity").replaceChildren();
+
+    for (const a of data || []) {
+      el("ocActivity").add(
+        new Option(a.activity_name, a.id)
+      );
+    }
+
+    await load();
+  };
+
+  el("ocActivity").onchange = load;
+
+  el("ocSave").onclick = async () => {
+    const inputs = [
+      ...box.querySelectorAll(".ocCode")
+    ];
+
+    const codes = new Set();
+
+    for (const input of inputs) {
+      const code = input.value
+        .normalize("NFKC").trim().toUpperCase();
+
+      input.value = code;
+
+      if (!code) continue;
+
+      if (!/^[A-Z0-9]{1,8}$/.test(code)) {
+        msg.textContent =
+          "代號只能使用英文字母或數字";
+        return;
+      }
+
+      if (codes.has(code)) {
+        msg.textContent =
+          "代號 " + code + " 重複，請修改";
+        return;
+      }
+
+      codes.add(code);
+    }
+
+    el("ocSave").disabled = true;
+    el("ocActivity").disabled = true;
+    inputs.forEach(i => i.disabled = true);
+
+    let saved = 0;
+
+    try {
+      for (const input of inputs) {
+        if (input.value === input.dataset.original) {
+          continue;
+        }
+
+        const { error } = await db
+          .from(input.dataset.table)
+          .update({
+            option_code: input.value || null
+          })
+          .eq("id", input.dataset.id)
+          .eq("activity_id", el("ocActivity").value);
+
+        if (error) throw error;
+
+        input.dataset.original = input.value;
+        saved++;
+      }
+
+      msg.textContent = "✅ 喊單代號儲存成功";
+
+    } catch (e) {
+      msg.textContent =
+        "已更新 " + saved + " 筆，" +
+        "其餘儲存失敗：" + e.message;
+    } finally {
+      el("ocSave").disabled = false;
+      el("ocActivity").disabled = false;
+      inputs.forEach(i => i.disabled = false);
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      revision++;
+      box.hidden = true;
+      el("ocActivity").replaceChildren();
+      el("ocProducts").replaceChildren();
+      el("ocPromotions").replaceChildren();
+      msg.textContent = "";
+    }
+  });
+})();
+</script>
