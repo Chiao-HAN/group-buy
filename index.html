@@ -42,6 +42,10 @@ button {
   margin-top: 20px;
 }
 #message { overflow-wrap: anywhere; }
+
+[hidden] { display:none !important; }
+input[type=checkbox] { width:auto; margin-right:8px; }
+select, textarea { width:100%; padding:12px; font-size:16px; border:1px solid #ccd5cf; border-radius:10px; }
 </style>
 </head>
 <body>
@@ -97,8 +101,7 @@ document.getElementById("logout").onclick = async () => {
   message.textContent = error ? "登出失敗" : "已登出";
 };
 </script>
-</body>
-</html>
+
 <script>
 const menu = document.createElement("div");
 menu.style.cssText = `
@@ -2379,7 +2382,8 @@ db.auth.onAuthStateChange(() => {
 
   button.onclick = async () => {
     box.hidden = !box.hidden;
-    if (box.hidden || loaded) return;
+    if (box.hidden) return;
+    if (loaded) return;
 
     el("qaMessage").textContent = "讀取商品中…";
 
@@ -2402,7 +2406,7 @@ db.auth.onAuthStateChange(() => {
     loaded = true;
 
     el("qaMessage").textContent =
-      "目前為介面測試，尚未開放正式儲存。";
+      "請選擇商品並完成活動設定。";
   };
 
   el("qaSearch").oninput = () => {
@@ -2659,7 +2663,7 @@ db.auth.onAuthStateChange(() => {
             activity_name: name,
             start_date: start,
             end_date: end,
-            status: "進行中",
+            status: "Active",
             notes: el("qaNotes").value.trim()
           })
           .select("id")
@@ -2860,3 +2864,44 @@ db.auth.onAuthStateChange(() => {
   }
 })();
 </script>
+
+<script>
+(() => {
+ const el = id => document.getElementById(id);
+ const box = el('quickActivity'), save = el('qaSave');
+ const entry = box.previousElementSibling;
+ const area = document.createElement('section');
+ area.innerHTML = `<details><summary>📋 複製舊活動</summary><label>選擇舊活動</label><select id="copyActivity"></select><button type="button" id="copyLoad">讀取活動清單</button><button type="button" id="copyApply">帶入設定（不會立即儲存）</button></details>`;
+ box.querySelector('h2').after(area);
+ const msg = el('qaMessage');
+ el('copyLoad').onclick = async () => {
+  const {data,error} = await db.from('activities').select('id,activity_name,end_date').order('created_at',{ascending:false});
+  if(error){msg.textContent=error.message;return;}
+  el('copyActivity').replaceChildren(new Option('請選擇',''),...data.map(a=>new Option(a.activity_name+'｜'+(a.end_date||''),a.id)));
+ };
+ el('copyApply').onclick = async () => {
+  const id=el('copyActivity').value; if(!id){msg.textContent='請先選擇舊活動';return;}
+  if(!confirm('以舊活動設定取代目前尚未儲存的內容？')) return;
+  const controls=[...box.querySelectorAll('button,input,select')]; const states=controls.map(c=>c.disabled); controls.forEach(c=>c.disabled=true);
+  try {
+   const results=await Promise.all([db.from('activities').select('*').eq('id',id).single(),db.from('activity_products').select('*').eq('activity_id',id).eq('is_available',true),db.from('promotions').select('*').eq('activity_id',id).eq('is_active',true)]);
+   for(const r of results) if(r.error) throw r.error;
+   const [a,ps,prs]=results.map(r=>r.data);
+   if(prs.length>1) throw new Error('此活動有多項優惠，請使用進階管理，避免遺漏設定');
+   const p=prs[0]; let links=[];
+   if(p){const r=await db.from('promotion_products').select('*').eq('promotion_id',p.id).eq('is_active',true);if(r.error)throw r.error;links=r.data;if(links.some(l=>l.required_quantity!=null))throw new Error('此活動有指定口味數量，請使用進階管理');}
+   const rows=[...box.querySelectorAll('.quick-product')];
+   if(ps.some(p=>!rows.some(r=>r.querySelector('.qaCheck').value===String(p.product_id)))) throw new Error('商品清單缺少舊活動商品，請重新整理網頁');
+   el('qaName').value=a.activity_name; el('qaNotes').value=a.notes||'';
+   const d=new Date(); const today=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); el('qaStart').value=today;el('qaEnd').value=today;
+   for(const r of rows){const c=r.querySelector('.qaCheck');const item=ps.find(p=>String(p.product_id)===c.value);c.checked=!!item;c.dispatchEvent(new Event('change'));r.querySelector('.qaPrice').value=item?.activity_price??'';r.querySelector('.qaCode').value=item?.option_code??'';r.querySelector('.qaSingle').checked=item?.allow_single_purchase!==false;}
+   el('qaSearch').value='';el('qaSearch').dispatchEvent(new Event('input'));
+   el('qaUsePromo').checked=!!p;el('qaUsePromo').dispatchEvent(new Event('change'));
+   if(p){el('qaPromoName').value=p.promotion_name;el('qaPromoType').value=p.promotion_type;el('qaQty').value=p.min_quantity;el('qaPromoType').dispatchEvent(new Event('change'));el('qaValue').value=({bundle_price:p.bundle_price,discount_rate:p.discount_rate*100,second_item_price:p.second_item_price,discount_amount:p.discount_amount})[p.promotion_type]??'';el('qaPromoCode').value=p.option_code||'';el('qaMode').value=p.purchase_mode||'bundle';el('qaMix').checked=!!p.allow_mix;el('qaRepeat').checked=p.repeat_discount!==false;for(const c of box.querySelectorAll('.qaEligibleCheck'))c.checked=links.some(l=>ps.some(x=>String(x.product_id)===c.value&&String(x.id)===String(l.activity_product_id)));}
+   msg.textContent='已帶入舊活動，請確認日期、價格及優惠，再按儲存全部設定。';
+  }catch(e){msg.textContent='無法複製：'+e.message;}finally{controls.forEach((c,i)=>c.disabled=states[i]);el('qaPromoType').dispatchEvent(new Event('change'));}
+ };
+ entry.addEventListener('click',()=>{if(!box.hidden)el('copyLoad').click();});
+})();
+</script>
+</body></html>
