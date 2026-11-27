@@ -1815,3 +1815,310 @@ db.auth.onAuthStateChange(() => {
   });
 })();
 </script>
+<style>
+#imText {
+  width: 100%;
+  box-sizing: border-box;
+}
+#imResult {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+#imText,
+#imResult {
+  max-width: 100%;
+}
+.purchase-rule-card {
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.purchase-rule-card select {
+  width: 100%;
+  padding: 10px;
+  margin: 8px 0;
+  font-size: 16px;
+}
+</style>
+
+<script>
+(() => {
+  if (typeof db === "undefined") return;
+
+  const el = id => document.getElementById(id);
+
+  const preview = el("imText")?.closest("section");
+
+  if (preview) {
+    preview.style.gridColumn = "1 / -1";
+    preview.style.width = "100%";
+    preview.style.minWidth = "0";
+    preview.style.boxSizing = "border-box";
+  }
+
+  const back = el("actBack");
+  if (!back) return;
+
+  const button = document.createElement("button");
+  button.textContent = "🛒 設定購買方式";
+  back.after(button);
+
+  const box = document.createElement("section");
+  box.hidden = true;
+  button.after(box);
+
+  box.innerHTML = `
+    <h3>🛒 購買方式與優惠規則</h3>
+
+    <label>選擇團購活動</label>
+    <select id="ruleActivity"></select>
+
+    <h4>📦 單品購買設定</h4>
+    <div id="ruleProducts"></div>
+
+    <h4>🏷️ 優惠購買方式</h4>
+    <div id="rulePromotions"></div>
+
+    <button id="ruleSave">儲存購買規則</button>
+    <p id="ruleMessage"></p>
+  `;
+
+  const msg = el("ruleMessage");
+  let revision = 0;
+
+  function createSelect(options, value) {
+    const select = document.createElement("select");
+
+    for (const [v, label] of options) {
+      select.add(new Option(label, v));
+    }
+
+    select.value = String(value);
+    return select;
+  }
+
+  function addProduct(p) {
+    const card = document.createElement("div");
+    card.className = "purchase-rule-card";
+    card.dataset.id = p.id;
+    card.dataset.table = "activity_products";
+
+    const title = document.createElement("h4");
+    title.textContent =
+      (p.products?.product_name || "商品") +
+      "｜" + p.activity_price + "元";
+
+    const select = createSelect([
+      ["true", "允許單品購買"],
+      ["false", "只能透過優惠組合購買"]
+    ], p.allow_single_purchase);
+
+    select.className = "ruleSingle";
+
+    card.append(title, select);
+    el("ruleProducts").append(card);
+  }
+
+  function addPromotion(p) {
+    const card = document.createElement("div");
+    card.className = "purchase-rule-card";
+    card.dataset.id = p.id;
+    card.dataset.table = "promotions";
+
+    const title = document.createElement("h4");
+    title.textContent = p.promotion_name;
+
+    const label = document.createElement("label");
+    label.textContent = "購買方式";
+
+    const mode = createSelect([
+      ["bundle", "整組購買（+1代表一組）"],
+      ["automatic", "依實際件數自動套用優惠"]
+    ], p.purchase_mode || "bundle");
+
+    mode.className = "ruleMode";
+
+    const repeatLabel = document.createElement("label");
+    repeatLabel.textContent = "是否重複享有優惠";
+
+    const repeat = createSelect([
+      ["true", "可以重複享有優惠"],
+      ["false", "每筆訂單限享一次優惠"]
+    ], p.repeat_discount);
+
+    repeat.className = "ruleRepeat";
+
+    const note = document.createElement("p");
+    note.textContent =
+      "例如：滿4件優惠，購買8件可享兩次。";
+
+    card.append(
+      title, label, mode,
+      repeatLabel, repeat, note
+    );
+
+    el("rulePromotions").append(card);
+  }
+
+  async function load() {
+    const current = ++revision;
+    const activity = el("ruleActivity").value;
+
+    el("ruleProducts").replaceChildren();
+    el("rulePromotions").replaceChildren();
+    el("ruleSave").disabled = true;
+    msg.textContent = "讀取中…";
+
+    if (!activity) {
+      msg.textContent = "請先選擇團購活動";
+      return;
+    }
+
+    try {
+      const [products, promotions] =
+        await Promise.all([
+          db.from("activity_products")
+            .select(
+              "id,activity_price," +
+              "allow_single_purchase," +
+              "products(product_name)"
+            )
+            .eq("activity_id", activity),
+
+          db.from("promotions")
+            .select(
+              "id,promotion_name," +
+              "purchase_mode,repeat_discount"
+            )
+            .eq("activity_id", activity)
+        ]);
+
+      if (current !== revision) return;
+      if (products.error) throw products.error;
+      if (promotions.error) throw promotions.error;
+
+      for (const p of products.data || []) {
+        addProduct(p);
+      }
+
+      for (const p of promotions.data || []) {
+        addPromotion(p);
+      }
+
+      if (!products.data?.length) {
+        el("ruleProducts").textContent =
+          "尚未設定活動商品";
+      }
+
+      if (!promotions.data?.length) {
+        el("rulePromotions").textContent =
+          "尚未設定優惠";
+      }
+
+      msg.textContent = "";
+      el("ruleSave").disabled = false;
+
+    } catch (e) {
+      msg.textContent = "讀取失敗：" + e.message;
+    }
+  }
+
+  button.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    el("ruleSave").disabled = true;
+
+    const { data, error } = await db
+      .from("activities")
+      .select("id,activity_name")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      msg.textContent = error.message;
+      return;
+    }
+
+    el("ruleActivity").replaceChildren();
+
+    for (const a of data || []) {
+      el("ruleActivity").add(
+        new Option(a.activity_name, a.id)
+      );
+    }
+
+    await load();
+  };
+
+  el("ruleActivity").onchange = load;
+
+  el("ruleSave").onclick = async () => {
+    const cards = [
+      ...box.querySelectorAll(".purchase-rule-card")
+    ];
+
+    const activity = el("ruleActivity").value;
+    const controls = [...box.querySelectorAll("select")];
+
+    el("ruleSave").disabled = true;
+    controls.forEach(c => c.disabled = true);
+
+    let saved = 0;
+
+    try {
+      for (const card of cards) {
+        let update;
+
+        if (card.dataset.table === "activity_products") {
+          update = {
+            allow_single_purchase:
+              card.querySelector(".ruleSingle")
+                .value === "true"
+          };
+        } else {
+          update = {
+            purchase_mode:
+              card.querySelector(".ruleMode").value,
+            repeat_discount:
+              card.querySelector(".ruleRepeat")
+                .value === "true"
+          };
+        }
+
+        const { error } = await db
+          .from(card.dataset.table)
+          .update(update)
+          .eq("id", card.dataset.id)
+          .eq("activity_id", activity);
+
+        if (error) throw error;
+        saved++;
+      }
+
+      msg.textContent = "✅ 購買規則儲存成功";
+
+    } catch (e) {
+      msg.textContent =
+        "已更新 " + saved + " 筆，" +
+        "其餘儲存失敗：" + e.message;
+    } finally {
+      el("ruleSave").disabled = false;
+      controls.forEach(c => c.disabled = false);
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      revision++;
+      box.hidden = true;
+      el("ruleActivity").replaceChildren();
+      el("ruleProducts").replaceChildren();
+      el("rulePromotions").replaceChildren();
+      msg.textContent = "";
+    }
+  });
+})();
+</script>
