@@ -2461,3 +2461,325 @@ db.auth.onAuthStateChange(() => {
   });
 })();
 </script>
+<script>
+(() => {
+  if (typeof db === "undefined") return;
+
+  const el = id => document.getElementById(id);
+  const box = el("quickActivity");
+  const save = el("qaSave");
+
+  if (!box || !save) return;
+
+  const msg = el("qaMessage");
+
+  function normalizeCode(value) {
+    return value.normalize("NFKC")
+      .trim().toUpperCase();
+  }
+
+  function readNumber(value) {
+    if (String(value).trim() === "") return NaN;
+    return Number(value);
+  }
+
+  save.disabled = false;
+
+  save.onclick = async () => {
+    const name = el("qaName").value.trim();
+    const start = el("qaStart").value;
+    const end = el("qaEnd").value;
+
+    if (!name || !start || !end) {
+      msg.textContent = "請完整填寫活動基本資料";
+      return;
+    }
+
+    if (end < start) {
+      msg.textContent = "結單日期不可早於開始日期";
+      return;
+    }
+
+    const rows = [...box.querySelectorAll(
+      ".quick-product"
+    )].filter(row =>
+      row.querySelector(".qaCheck").checked
+    );
+
+    if (!rows.length) {
+      msg.textContent = "請至少選擇一項商品";
+      return;
+    }
+
+    const codes = new Set();
+    const products = [];
+
+    function checkCode(code) {
+      if (!code) return;
+
+      if (!/^[A-Z0-9]{1,8}$/.test(code)) {
+        throw new Error("代號只能使用英文字母或數字");
+      }
+
+      if (codes.has(code)) {
+        throw new Error("代號重複：" + code);
+      }
+
+      codes.add(code);
+    }
+
+    let promo = null;
+    let eligible = [];
+
+    try {
+      for (const row of rows) {
+        const check = row.querySelector(".qaCheck");
+
+        const price = readNumber(
+          row.querySelector(".qaPrice").value
+        );
+
+        const code = normalizeCode(
+          row.querySelector(".qaCode").value
+        );
+
+        if (!Number.isFinite(price) || price < 0) {
+          throw new Error(
+            "請確認 " + check.dataset.name + " 的價格"
+          );
+        }
+
+        checkCode(code);
+
+        products.push({
+          product_id: check.value,
+          activity_price: price,
+          option_code: code || null,
+          allow_single_purchase:
+            row.querySelector(".qaSingle").checked,
+          is_available: true
+        });
+      }
+
+      if (el("qaUsePromo").checked) {
+        const promoName =
+          el("qaPromoName").value.trim();
+
+        const type = el("qaPromoType").value;
+        const mode = el("qaMode").value;
+        const qty = Number(el("qaQty").value);
+
+        const value = readNumber(
+          el("qaValue").value
+        );
+
+        const code = normalizeCode(
+          el("qaPromoCode").value
+        );
+
+        if (!promoName ||
+            !Number.isInteger(qty) ||
+            qty < 1 ||
+            !Number.isFinite(value) ||
+            value < 0) {
+          throw new Error("請完整填寫優惠設定");
+        }
+
+        if (type === "discount_rate" &&
+            (value <= 0 || value > 100)) {
+          throw new Error("折扣請輸入大於0至100的數字");
+        }
+
+        checkCode(code);
+
+        eligible = [...box.querySelectorAll(
+          ".qaEligibleCheck:checked"
+        )].map(c => String(c.value));
+
+        if (!eligible.length) {
+          throw new Error("請選擇適用優惠的商品");
+        }
+
+        promo = {
+          promotion_name: promoName,
+          promotion_type: type,
+          min_quantity: qty,
+          bundle_price:
+            type === "bundle_price" ? value : null,
+          discount_rate:
+            type === "discount_rate"
+              ? value / 100 : null,
+          second_item_price:
+            type === "second_item_price"
+              ? value : null,
+          discount_amount:
+            type === "discount_amount" ? value : 0,
+          option_code: code || null,
+          purchase_mode: mode,
+          allow_mix: el("qaMix").checked,
+          repeat_discount: el("qaRepeat").checked,
+          is_active: true
+        };
+      }
+
+      for (const p of products) {
+        if (!p.allow_single_purchase &&
+            (!promo ||
+             promo.purchase_mode !== "bundle" ||
+             !eligible.includes(String(p.product_id)))) {
+          throw new Error(
+            "不允許單品購買的商品，必須設定適用的整組優惠"
+          );
+        }
+      }
+
+    } catch (e) {
+      msg.textContent = "⚠️ " + e.message;
+      return;
+    }
+
+    save.disabled = true;
+
+    const controls = [
+      ...box.querySelectorAll("input,select,button")
+    ];
+
+    const previous = controls.map(c => c.disabled);
+    controls.forEach(c => c.disabled = true);
+
+    msg.textContent = "正在建立活動，請稍候…";
+
+    let activityId = null;
+    let promotionId = null;
+
+    try {
+      const { data: activity, error: activityError } =
+        await db.from("activities")
+          .insert({
+            activity_name: name,
+            start_date: start,
+            end_date: end,
+            status: "進行中",
+            notes: el("qaNotes").value.trim()
+          })
+          .select("id")
+          .single();
+
+      if (activityError) throw activityError;
+
+      activityId = activity.id;
+
+      const { data: added, error: productError } =
+        await db.from("activity_products")
+          .insert(products.map(p => ({
+            ...p,
+            activity_id: activityId
+          })))
+          .select("id,product_id");
+
+      if (productError) throw productError;
+
+      if (promo) {
+        const { data: promotion, error: promoError } =
+          await db.from("promotions")
+            .insert({
+              ...promo,
+              activity_id: activityId
+            })
+            .select("id")
+            .single();
+
+        if (promoError) throw promoError;
+
+        promotionId = promotion.id;
+
+        const links = added.filter(p =>
+          eligible.includes(String(p.product_id))
+        ).map(p => ({
+          promotion_id: promotionId,
+          activity_product_id: p.id,
+          is_active: true
+        }));
+
+        const { error: linkError } =
+          await db.from("promotion_products")
+            .insert(links);
+
+        if (linkError) throw linkError;
+      }
+
+      el("qaName").value = "";
+      el("qaNotes").value = "";
+      el("qaPromoName").value = "";
+      el("qaPromoCode").value = "";
+      el("qaValue").value = "";
+
+      el("qaUsePromo").checked = false;
+      el("qaPromoFields").hidden = true;
+
+      for (const row of rows) {
+        const check = row.querySelector(".qaCheck");
+        check.checked = false;
+        check.dispatchEvent(new Event("change"));
+        row.querySelector(".qaPrice").value = "";
+        row.querySelector(".qaCode").value = "";
+        row.querySelector(".qaSingle").checked = true;
+      }
+
+      msg.textContent =
+        "✅ 活動建立成功：" + name +
+        "，共 " + products.length + " 項商品" +
+        (promo ? "，1項優惠" : "");
+
+    } catch (e) {
+      let cleanupOK = true;
+
+      if (activityId) {
+        try {
+          if (promotionId) {
+            const a = await db
+              .from("promotion_products")
+              .delete()
+              .eq("promotion_id", promotionId);
+
+            if (a.error) throw a.error;
+
+            const b = await db.from("promotions")
+              .delete().eq("id", promotionId);
+
+            if (b.error) throw b.error;
+          }
+
+          const c = await db
+            .from("activity_products")
+            .delete()
+            .eq("activity_id", activityId);
+
+          if (c.error) throw c.error;
+
+          const d = await db.from("activities")
+            .delete().eq("id", activityId);
+
+          if (d.error) throw d.error;
+
+        } catch (cleanupError) {
+          cleanupOK = false;
+        }
+      }
+
+      msg.textContent =
+        "❌ 建立失敗：" + e.message +
+        (cleanupOK
+          ? "；請確認活動清單後再試"
+          : "；可能有未完成資料，請勿重複儲存");
+
+    } finally {
+      controls.forEach((c, i) => {
+        c.disabled = previous[i];
+      });
+
+      save.disabled = false;
+    }
+  };
+})();
+</script>
