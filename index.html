@@ -635,3 +635,115 @@ db.auth.onAuthStateChange(() => {
   });
 })();
 </script>
+<script>
+(() => {
+  const box = document.createElement("section");
+  box.hidden = true;
+  box.innerHTML = `
+    <h2>📦 活動商品設定</h2>
+    <label>選擇團購活動</label>
+    <select id="apActivity" style="width:100%;padding:12px"></select>
+    <label>選擇商品</label>
+    <select id="apProduct" style="width:100%;padding:12px"></select>
+    <label>活動售價</label>
+    <input id="apPrice" type="number" min="0" step="0.01">
+    <button id="apSave">加入活動商品</button>
+    <p id="apMessage"></p>
+  `;
+
+  const back = document.getElementById("actBack");
+  if (!back) return;
+
+  const entry = document.createElement("button");
+  entry.textContent = "📦 設定活動商品";
+  entry.type = "button";
+  back.after(entry, box);
+
+  const el = id => document.getElementById(id);
+
+  function fill(select, rows, name) {
+    select.replaceChildren();
+    rows.forEach(row => {
+      select.add(new Option(row[name], row.id));
+    });
+  }
+
+  entry.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    const [a, p] = await Promise.all([
+      db.from("activities").select("id,activity_name"),
+      db.from("products").select("id,product_name")
+    ]);
+
+    if (a.error || p.error) {
+      el("apMessage").textContent =
+        "讀取失敗：" + (a.error || p.error).message;
+      return;
+    }
+
+    fill(el("apActivity"), a.data, "activity_name");
+    fill(el("apProduct"), p.data, "product_name");
+    el("apMessage").textContent = "";
+  };
+
+  el("apSave").onclick = async () => {
+    const activity = el("apActivity").value;
+    const product = el("apProduct").value;
+    const price = el("apPrice").value;
+    const msg = el("apMessage");
+
+    if (!activity || !product || price === "" ||
+        !Number.isFinite(Number(price)) ||
+        Number(price) < 0) {
+      msg.textContent = "請完整填寫活動、商品及售價";
+      return;
+    }
+
+    const button = el("apSave");
+    button.disabled = true;
+
+    try {
+      const existing = await db.from("activity_products")
+        .select("id")
+        .eq("activity_id", activity)
+        .eq("product_id", product)
+        .limit(1);
+
+      if (existing.error) throw existing.error;
+
+      if (existing.data.length) {
+        msg.textContent = "此商品已加入活動";
+        return;
+      }
+
+      const { error } = await db.from("activity_products")
+        .insert({
+          activity_id: activity,
+          product_id: product,
+          activity_price: Number(price),
+          is_available: true
+        });
+
+      if (error) throw error;
+      msg.textContent = "✅ 活動商品加入成功";
+      el("apPrice").value = "";
+    } catch (e) {
+      msg.textContent = "儲存失敗：" + e.message;
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      box.hidden = true;
+      el("apActivity").replaceChildren();
+      el("apProduct").replaceChildren();
+      el("apPrice").value = "";
+      el("apMessage").textContent = "";
+    }
+  });
+})();
+</script>
