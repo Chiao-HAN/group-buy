@@ -747,3 +747,301 @@ db.auth.onAuthStateChange(() => {
   });
 })();
 </script>
+<script>
+(() => {
+  const back = document.getElementById("actBack");
+  if (!back || typeof db === "undefined") return;
+
+  const button = document.createElement("button");
+  button.textContent = "🏷️ 設定活動優惠";
+  back.after(button);
+
+  const box = document.createElement("section");
+  box.hidden = true;
+  button.after(box);
+
+  box.innerHTML = `
+    <h3>🏷️ 活動優惠設定</h3>
+
+    <label>選擇團購活動</label>
+    <select id="prActivity"></select>
+
+    <label>優惠名稱</label>
+    <input id="prName" placeholder="例如：雪糕4支118元">
+
+    <label>優惠類型</label>
+    <select id="prType">
+      <option value="bundle_price">固定組合價</option>
+      <option value="discount_rate">滿件折扣</option>
+      <option value="second_item_price">第二件特價</option>
+      <option value="discount_amount">滿件折抵</option>
+    </select>
+
+    <label>優惠件數</label>
+    <input id="prQty" type="number" min="1" value="2">
+
+    <label id="prValueLabel">組合優惠價格</label>
+    <input id="prValue" type="number" min="0" step="0.01">
+
+    <label>口味組合方式</label>
+    <select id="prMix">
+      <option value="same">相同商品</option>
+      <option value="mix">自由混搭</option>
+      <option value="fixed">指定組合</option>
+    </select>
+
+    <h4>適用商品</h4>
+    <div id="prProducts"></div>
+
+    <label>優惠狀態</label>
+    <select id="prActive">
+      <option value="true">啟用</option>
+      <option value="false">停用</option>
+    </select>
+
+    <label>備註</label>
+    <input id="prNotes">
+
+    <button id="prSave">儲存優惠</button>
+    <p id="prMessage"></p>
+  `;
+
+  const el = id => document.getElementById(id);
+  const msg = el("prMessage");
+  let revision = 0;
+
+  function updateType() {
+    const labels = {
+      bundle_price: "組合優惠價格",
+      discount_rate: "折扣百分比（79折請輸入79）",
+      second_item_price: "第二件價格",
+      discount_amount: "折抵金額"
+    };
+    el("prValueLabel").textContent =
+      labels[el("prType").value];
+
+    if (el("prType").value === "second_item_price") {
+      el("prQty").value = 2;
+      el("prQty").disabled = true;
+    } else {
+      el("prQty").disabled = false;
+    }
+  }
+
+  el("prType").onchange = updateType;
+
+  async function loadProducts() {
+    const current = ++revision;
+    const list = el("prProducts");
+    list.replaceChildren();
+
+    const activity = el("prActivity").value;
+    if (!activity) return;
+
+    try {
+      const { data, error } = await db
+        .from("activity_products")
+        .select("id,product_id,activity_price,products(product_name)")
+        .eq("activity_id", activity)
+        .eq("is_available", true);
+
+      if (current !== revision) return;
+      if (error) throw error;
+
+      for (const p of data || []) {
+        const row = document.createElement("div");
+        row.style.padding = "10px";
+        row.style.borderBottom = "1px solid #ddd";
+
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.value = p.id;
+        check.style.width = "auto";
+
+        const label = document.createElement("label");
+        label.append(check, " " +
+          (p.products?.product_name || p.product_id) +
+          "｜" + p.activity_price + "元");
+
+        const qty = document.createElement("input");
+        qty.type = "number";
+        qty.min = "1";
+        qty.value = "1";
+        qty.placeholder = "指定數量";
+        qty.className = "prRequired";
+
+        row.append(label, qty);
+        list.append(row);
+      }
+
+      if (!data?.length) {
+        list.textContent = "尚未加入活動商品";
+      }
+
+      updateMix();
+    } catch (e) {
+      msg.textContent = "讀取失敗：" + e.message;
+    }
+  }
+
+  function updateMix() {
+    box.querySelectorAll(".prRequired").forEach(q => {
+      q.style.display =
+        el("prMix").value === "fixed" ? "" : "none";
+    });
+  }
+
+  el("prMix").onchange = updateMix;
+  el("prActivity").onchange = loadProducts;
+
+  button.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    msg.textContent = "";
+    try {
+      const { data, error } = await db
+        .from("activities")
+        .select("id,activity_name")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      el("prActivity").replaceChildren();
+
+      for (const a of data || []) {
+        el("prActivity").add(
+          new Option(a.activity_name, a.id)
+        );
+      }
+
+      await loadProducts();
+      updateType();
+    } catch (e) {
+      msg.textContent = "讀取失敗：" + e.message;
+    }
+  };
+
+  el("prSave").onclick = async () => {
+    const save = el("prSave");
+    const name = el("prName").value.trim();
+    const activity = el("prActivity").value;
+    const type = el("prType").value;
+    const qty = Number(el("prQty").value);
+    const raw = el("prValue").value;
+    const value = Number(raw);
+    const mix = el("prMix").value;
+
+    const selected = [...box.querySelectorAll(
+      '#prProducts input[type="checkbox"]:checked'
+    )];
+
+    if (!name || !activity || !raw ||
+        !Number.isInteger(qty) || qty < 1 ||
+        !Number.isFinite(value) || value < 0 ||
+        !selected.length) {
+      msg.textContent = "請完整填寫優惠資料並勾選商品";
+      return;
+    }
+
+    if (type === "discount_rate" &&
+        (value <= 0 || value > 100)) {
+      msg.textContent = "折扣請輸入1至100之間的百分比";
+      return;
+    }
+
+    const links = selected.map(c => ({
+      activity_product_id: c.value,
+      is_active: true,
+      required_quantity: mix === "fixed"
+        ? Number(c.closest("div")
+            .querySelector(".prRequired").value)
+        : null
+    }));
+
+    if (mix === "fixed" && (
+        links.some(p =>
+          !Number.isInteger(p.required_quantity) ||
+          p.required_quantity < 1) ||
+        links.reduce((s,p) =>
+          s + p.required_quantity, 0) !== qty
+    )) {
+      msg.textContent = "指定商品數量合計必須等於優惠件數";
+      return;
+    }
+
+    save.disabled = true;
+    let newId = null;
+
+    try {
+      const record = {
+        activity_id: activity,
+        promotion_name: name,
+        promotion_type: type,
+        min_quantity: qty,
+        bundle_price: type === "bundle_price"
+          ? value : null,
+        discount_rate: type === "discount_rate"
+          ? value / 100 : null,
+        second_item_price: type === "second_item_price"
+          ? value : null,
+        discount_amount: type === "discount_amount"
+          ? value : 0,
+        allow_mix: mix !== "same",
+        is_active: el("prActive").value === "true",
+        notes: el("prNotes").value
+      };
+
+      const { data, error } = await db
+        .from("promotions")
+        .insert(record)
+        .select("id")
+        .single();
+
+      if (error) throw error;
+      newId = data.id;
+
+      const result = await db
+        .from("promotion_products")
+        .insert(links.map(p => ({
+          ...p,
+          promotion_id: newId
+        })));
+
+      if (result.error) throw result.error;
+
+      msg.textContent = "✅ 優惠儲存成功";
+      el("prName").value = "";
+      el("prValue").value = "";
+      el("prNotes").value = "";
+      selected.forEach(c => c.checked = false);
+
+    } catch (e) {
+      let warning = "";
+      if (newId) {
+        const result = await db.from("promotions")
+          .delete().eq("id", newId);
+        if (result.error) {
+          warning = "；可能留下未完成的優惠，請勿重複儲存";
+        }
+      }
+      msg.textContent = "儲存失敗：" + e.message + warning;
+    } finally {
+      save.disabled = false;
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      revision++;
+      box.hidden = true;
+      el("prActivity").replaceChildren();
+      el("prProducts").replaceChildren();
+      el("prName").value = "";
+      el("prValue").value = "";
+      el("prNotes").value = "";
+      msg.textContent = "";
+    }
+  });
+})();
+</script>
