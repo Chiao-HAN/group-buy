@@ -1,0 +1,101 @@
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>團購訂單小幫手</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, sans-serif;
+  background: #f5f7f5;
+  color: #34443c;
+  margin: 0;
+  padding: 24px;
+}
+main {
+  max-width: 420px;
+  margin: 50px auto;
+  background: white;
+  padding: 28px;
+  border-radius: 20px;
+  box-shadow: 0 4px 20px #00000010;
+}
+h1 { font-size: 25px; text-align: center; }
+p { text-align: center; }
+label { display: block; margin-top: 16px; }
+input, button {
+  width: 100%;
+  padding: 14px;
+  margin-top: 8px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+input { border: 1px solid #ccd5cf; }
+button {
+  background: #527c65;
+  color: white;
+  border: none;
+  margin-top: 20px;
+}
+#message { overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+<h1>團購訂單小幫手</h1>
+<p>讓團購管理更簡單</p>
+<form id="login">
+<label>電子郵件</label>
+<input id="email" type="email" autocomplete="username" required>
+<label>密碼</label>
+<input id="password" type="password" autocomplete="current-password" required>
+<button type="submit">登入</button>
+</form>
+<section id="home" hidden>
+<p>登入成功</p>
+<p>團購管理系統建置中</p>
+<button id="logout">登出</button>
+</section>
+<p id="message" role="status"></p>
+</main>
+<script>
+const db = supabase.createClient(
+  "https://oimpdpyoqkcjasjuqrjt.supabase.co",
+  "sb_publishable_CyAQ9gh-5jrGSroxeC_KiQ_mlaGCW6Y"
+);
+const login = document.getElementById("login");
+const home = document.getElementById("home");
+const message = document.getElementById("message");
+
+db.auth.onAuthStateChange((event, session) => {
+  login.hidden = !!session;
+  home.hidden = !session;
+});
+
+login.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message.textContent = "登入中…";
+  try {
+    const { error } = await db.auth.signInWithPassword({
+      email: document.getElementById("email").value,
+      password: document.getElementById("password").value
+    });
+    message.textContent = error
+      ? "登入失敗：" + error.message
+      : "登入成功";
+  } catch {
+    message.textContent = "連線失敗，請稍後再試";
+  }
+});
+
+document.getElementById("logout").onclick = async () => {
+  const { error } = await db.auth.signOut();
+  message.textContent = error ? "登出失敗" : "已登出";
+};
+</script>
+</body>
+</html>
