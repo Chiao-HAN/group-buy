@@ -1695,6 +1695,7 @@ db.auth.onAuthStateChange(() => {
       const lines = raw.split(/\r?\n/)
         .filter(s => s.trim());
 
+      const customerGroups = new Map();
       for (const original of lines) {
         const line = original.normalize("NFKC")
           .trim();
@@ -1780,6 +1781,47 @@ db.auth.onAuthStateChange(() => {
           card.append(detail);
         }
 
+        const summary = document.createElement("p");
+
+        if (errors.length) {
+          invalid++;
+          summary.style.color = "#b91c1c";
+          summary.textContent =
+            "⚠️ " + errors.join("；");
+        } else {
+          valid++;
+          let group = customerGroups.get(customer);
+          if (!group) { group = {subtotal:0, quantities:new Map(), count:0}; customerGroups.set(customer,group); }
+          group.count++;
+          group.subtotal = money(group.subtotal + subtotal);
+          for (const [id,x] of quantities) {
+            const old = group.quantities.get(id);
+            group.quantities.set(id,{item:x.item,qty:(old?.qty || 0)+x.qty});
+          }
+          summary.textContent = "客人：" + customer + "｜原始小計：" + subtotal + "元（優惠於下方彙整）";
+        }
+
+        card.append(summary);
+        result.append(card);
+      }
+
+      const groupTitle = document.createElement("h3");
+      groupTitle.textContent = "依客人彙整優惠";
+      result.append(groupTitle);
+      for (const [customer,group] of customerGroups) {
+        const card = document.createElement("div");
+        card.style.cssText = "border:1px solid #ccd5cf;border-radius:12px;padding:12px;margin:10px 0";
+        const heading = document.createElement("h4");
+        heading.textContent = customer + "｜" + group.count + "筆喊單";
+        card.append(heading);
+        const quantities = group.quantities;
+        let subtotal = group.subtotal;
+        const errors = [];
+        for (const x of quantities.values()) {
+          const detail = document.createElement("p");
+          detail.textContent = x.item.name + " × " + x.qty + "＝" + money(x.item.price*x.qty) + "元";
+          card.append(detail);
+        }
         const used = new Set();
         for (const promo of auto) {
           const eligible = links.data.filter(l=>String(l.promotion_id)===String(promo.id));
@@ -1805,23 +1847,15 @@ db.auth.onAuthStateChange(() => {
           }
         }
         const summary = document.createElement("p");
-
         if (errors.length) {
-          invalid++;
+          valid -= group.count; invalid += group.count;
           summary.style.color = "#b91c1c";
-          summary.textContent =
-            "⚠️ " + errors.join("；");
+          summary.textContent = "⚠️ " + errors.join("；") + "（此客人未計入有效合計）";
         } else {
-          valid++;
           total = money(total + subtotal);
-
-          summary.textContent =
-            "客人：" + customer +
-            "｜小計：" + subtotal + "元";
+          summary.textContent = "應付金額：" + subtotal + "元";
         }
-
-        card.append(summary);
-        result.append(card);
+        card.append(summary); result.append(card);
       }
 
       const footer = document.createElement("h3");
