@@ -1,0 +1,3042 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>團購訂單小幫手</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, sans-serif;
+  background: #f5f7f5;
+  color: #34443c;
+  margin: 0;
+  padding: 24px;
+}
+main {
+  max-width: 420px;
+  margin: 50px auto;
+  background: white;
+  padding: 28px;
+  border-radius: 20px;
+  box-shadow: 0 4px 20px #00000010;
+}
+h1 { font-size: 25px; text-align: center; }
+p { text-align: center; }
+label { display: block; margin-top: 16px; }
+input, button {
+  width: 100%;
+  padding: 14px;
+  margin-top: 8px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+input { border: 1px solid #ccd5cf; }
+button {
+  background: #527c65;
+  color: white;
+  border: none;
+  margin-top: 20px;
+}
+#message { overflow-wrap: anywhere; }
+
+[hidden] { display:none !important; }
+input[type=checkbox] { width:auto; margin-right:8px; }
+select, textarea { width:100%; padding:12px; font-size:16px; border:1px solid #ccd5cf; border-radius:10px; }
+</style>
+<style>
+body{padding:12px} main:has(#home:not([hidden])){max-width:1200px;margin:12px auto;padding:16px} #home{min-width:0} #workspace{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start} #sideNav{position:sticky;top:10px;background:#edf4ef;border-radius:12px;padding:10px} #sideNav button{margin:3px 0;padding:10px;text-align:left;background:transparent;color:#34443c} #sideNav button.active{background:#527c65;color:white} #sideNav small{display:block;margin:12px 5px 4px;color:#52685b} #workspace #home>p:first-child,#workspace #home>p:nth-child(2){display:none} #workspace #home>div.legacy-menu{display:none!important} #navToggle{display:none} #activityTabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0} #activityTabs button{width:auto;flex:1;margin:0;padding:10px;background:#edf4ef;color:#34443c} #activityTabs button.active{background:#527c65;color:white} #quickActivity>details>summary{display:none} #quickActivity>details{padding:8px} #workspace input,#workspace select,#workspace textarea{max-width:100%;min-width:0} #workspace section{min-width:0;overflow-wrap:anywhere} @media(max-width:650px){#workspace{grid-template-columns:minmax(0,1fr);gap:8px} #sideNav{position:static} #navToggle{display:block;margin:0 0 8px} #sideNav.collapsed #navItems{display:none} main:has(#home:not([hidden])){padding:10px} #activityTabs button{font-size:14px;padding:8px}}
+</style><style>.shopTabs{display:flex;flex-wrap:wrap;gap:5px}.shopTabs button{width:auto;flex:1;margin:4px 0;background:#edf4ef;color:#34443c;padding:8px}.shopTabs button.active{background:#527c65;color:white}.shopRow{display:flex;align-items:center;gap:8px;border-bottom:1px solid #ddd;padding:12px 0;flex-wrap:wrap}.shopRow>div:first-of-type{flex:1;min-width:80px}.shopRow small,.shopRow strong{display:block}.shopRow strong{font-size:24px}.shopRow .need{color:#a52b2b}.shopRow img{width:55px;height:65px;object-fit:contain}.shopWheel{width:65px;padding:5px;font-size:22px}.shopRow button{width:auto;margin:0;padding:6px}#shopContent pre{white-space:pre-wrap}</style><script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script><style>.shopRow .need.zero{color:#527c65}.weekDays{display:flex;gap:5px;justify-content:space-between;margin:12px 0}.weekDays label{margin:0;position:relative}.weekDays input{position:absolute;opacity:0;width:1px;height:1px}.weekDays span{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#edf4ef;color:#34443c}.weekDays input:checked+span{background:#527c65;color:white}.weekDays input:focus-visible+span{outline:2px solid #34443c}.wheelWrap{width:66px;position:relative;background:#f1f4f1;border-radius:10px}.numberWheel{height:108px;overflow-y:auto;scroll-snap-type:y mandatory;scrollbar-width:none;padding:36px 0;overscroll-behavior:contain;touch-action:pan-y}.numberWheel::-webkit-scrollbar{display:none}.numberWheel>div{height:36px;display:grid;place-items:center;scroll-snap-align:center;font-size:17px;color:#829087}.numberWheel>div.chosen{font-size:24px;font-weight:700;color:#34443c;background:#dce9df;border-radius:7px}.shopRow .stock{text-align:center}</style></head>
+<body>
+<main>
+<h1>團購訂單小幫手</h1>
+<p>讓團購管理更簡單</p>
+<form id="login">
+<label>電子郵件</label>
+<input id="email" type="email" autocomplete="username" required>
+<label>密碼</label>
+<input id="password" type="password" autocomplete="current-password" required>
+<button type="submit">登入</button>
+</form>
+<section id="home" hidden>
+<p>登入成功</p>
+<p>團購管理系統建置中</p>
+<button id="logout">登出</button>
+</section>
+<p id="message" role="status"></p>
+</main>
+<script>
+const db = supabase.createClient(
+  "https://oimpdpyoqkcjasjuqrjt.supabase.co",
+  "sb_publishable_CyAQ9gh-5jrGSroxeC_KiQ_mlaGCW6Y"
+);
+const login = document.getElementById("login");
+const home = document.getElementById("home");
+const message = document.getElementById("message");
+
+db.auth.onAuthStateChange((event, session) => {
+  login.hidden = !!session;
+  home.hidden = !session;
+});
+
+login.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message.textContent = "登入中…";
+  try {
+    const { error } = await db.auth.signInWithPassword({
+      email: document.getElementById("email").value,
+      password: document.getElementById("password").value
+    });
+    message.textContent = error
+      ? "登入失敗：" + error.message
+      : "登入成功";
+  } catch {
+    message.textContent = "連線失敗，請稍後再試";
+  }
+});
+
+document.getElementById("logout").onclick = async () => {
+  if(window.shopClose && !window.shopClose()) return;
+  const { error } = await db.auth.signOut();
+  message.textContent = error ? "登出失敗" : "已登出";
+};
+</script>
+
+<script>
+const menu = document.createElement("div");
+menu.style.cssText = `
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin:20px 0;
+`;
+
+const features = [
+  "📅 團購活動",
+  "📦 商品管理",
+  "📋 喊單匯入",
+  "👥 客人訂單",
+  "🚚 到貨管理",
+  "💬 到貨通知",
+  "▥ 條碼結帳",
+  "☑️ 出貨核對",
+  "🖨️ 標籤列印",
+  "📊 訂單統計"
+];
+
+const status = document.createElement("p");
+status.style.fontSize = "14px";
+
+features.forEach(name => {
+  const btn = document.createElement("button");
+  btn.textContent = name;
+  btn.type = "button";
+  btn.style.cssText = `
+    background:#edf4ef;
+    color:#34443c;
+    border:1px solid #ccd5cf;
+    min-height:80px;
+    border-radius:12px;
+    font-size:16px;
+    margin:0;
+  `;
+  btn.onclick = () => {
+    status.textContent = name + "：功能建置中";
+  };
+  menu.appendChild(btn);
+});
+
+const test = document.createElement("button");
+test.textContent = "測試資料庫連線";
+test.type = "button";
+
+test.onclick = async () => {
+  status.textContent = "正在測試連線…";
+  try {
+    const {data,error} = await db
+      .from("products")
+      .select("id")
+      .limit(1);
+
+    status.textContent = error
+      ? "❌ 連線失敗：" + error.message
+      : "✅ 商品資料表查詢成功";
+  } catch(e) {
+    status.textContent = "❌ 測試失敗：" + e.message;
+  }
+};
+
+const logoutButton = document.getElementById("logout");
+
+home.insertBefore(menu,logoutButton);
+home.insertBefore(test,logoutButton);
+home.insertBefore(status,logoutButton);
+
+db.auth.onAuthStateChange(() => {
+  status.textContent = "";
+});
+</script><script>
+(() => {
+  const fields = [
+    ["product_code","商品品號","text"],
+    ["product_name","商品名稱","text"],
+    ["barcode","商品條碼","text"],
+    ["category","商品分類","text"],
+    ["cost_price","成本價格","number"],
+    ["Selling_price","銷售價格","number"],
+    ["validity_days","有效天數","number"]
+  ];
+
+  const panel = document.createElement("section");
+  panel.hidden = true;
+  panel.innerHTML = `
+    <h2>📦 商品管理</h2>
+    <button type="button" id="productBack">返回首頁</button>
+    <input id="productSearch" placeholder="搜尋商品名稱、編號、條碼">
+    <h3>新增／修改商品</h3>
+    <form id="productForm">
+      ${fields.map(([key,label,type]) => `
+        <label>${label}</label>
+        <input id="p_${key}" type="${type}"
+          ${type === "number" ? 'min="0" step="' +
+          (key === "validity_days" ? "1" : "0.01") +
+          '"' : ""}
+          ${key === "product_name" ||
+          key === "product_code" ? "required" : ""}>
+      `).join("")}
+      <label>商品狀態</label>
+      <select id="p_is_active"
+        style="width:100%;padding:12px;font-size:16px">
+        <option value="true">啟用</option>
+        <option value="false">停用</option>
+      </select>
+      <button type="submit">儲存商品</button>
+      <button type="button" id="productClear"
+        style="background:#88948d">清空／新增商品</button>
+    </form>
+    <p id="productMessage" role="status"></p>
+    <hr>
+    <h3>商品清單</h3>
+    <div id="productList"></div>
+    <button type="button" id="productMore"
+      hidden>載入更多商品</button>
+  `;
+
+  home.insertBefore(panel, logoutButton);
+
+  const el = id => document.getElementById(id);
+  const form = el("productForm");
+  const msg = el("productMessage");
+  let editingId = null;
+  let products = [];
+  let busy = false;
+  let page = 0;
+  let version = 0;
+
+  function clearForm() {
+    editingId = null;
+    form.reset();
+    el("p_is_active").value = "true";
+  }
+
+  function renderProducts() {
+    const list = el("productList");
+    const keyword = el("productSearch")
+      .value.trim().toLowerCase();
+
+    list.replaceChildren();
+
+    const filtered = products.filter(p =>
+      [p.product_name,p.product_code,p.barcode,p.category]
+        .some(v => String(v ?? "")
+        .toLowerCase().includes(keyword))
+    );
+
+    if (!filtered.length) {
+      list.textContent = "目前沒有符合的商品";
+    }
+
+    filtered.forEach(p => {
+      const card = document.createElement("div");
+      card.style.cssText =
+        "border:1px solid #ccd5cf;border-radius:12px;padding:14px;margin:10px 0";
+
+      const name = document.createElement("strong");
+      name.textContent = p.product_name || "未命名商品";
+
+      const detail = document.createElement("p");
+      detail.style.textAlign = "left";
+      detail.textContent =
+        "編號：" + (p.product_code ?? "—") +
+        "｜售價：" + (p.Selling_price ?? "—") +
+        "｜" + (p.is_active ? "啟用" : "停用");
+
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.textContent = "修改商品";
+      edit.onclick = () => {
+        if (busy) return;
+        editingId = p.id;
+        fields.forEach(([key]) => {
+          el("p_" + key).value = p[key] ?? "";
+        });
+        el("p_is_active").value =
+          String(Boolean(p.is_active));
+        msg.textContent = "正在修改商品";
+        form.scrollIntoView({behavior:"smooth"});
+      };
+
+      card.append(name,detail,edit);
+      list.appendChild(card);
+    });
+  }
+
+  async function loadProducts(reset = true) {
+    const current = ++version;
+    if (reset) {
+      page = 0;
+      products = [];
+      renderProducts();
+    }
+
+    el("productMore").hidden = true;
+
+    const {data,error} = await db
+      .from("products")
+      .select("*")
+      .order("id",{ascending:false})
+      .range(page * 100,page * 100 + 99);
+
+    if (current !== version) return;
+
+    if (error) {
+      msg.textContent = "讀取失敗：" + error.message;
+      return;
+    }
+
+    products.push(...data);
+    page++;
+    renderProducts();
+    el("productMore").hidden = data.length < 100;
+  }
+
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (busy) return;
+
+    const payload = {};
+
+    fields.forEach(([key,label,type]) => {
+      const value = el("p_" + key).value.trim();
+      payload[key] = value === "" ? null :
+        type === "number" ? Number(value) : value;
+    });
+
+    if (!payload.product_name || !payload.product_code) {
+      msg.textContent = "請輸入商品名稱及編號";
+      return;
+    }
+
+    payload.is_active =
+      el("p_is_active").value === "true";
+
+    busy = true;
+    const save = form.querySelector('[type="submit"]');
+    save.disabled = true;
+    msg.textContent = "儲存中…";
+
+    try {
+      const query = editingId === null
+        ? db.from("products").insert(payload)
+        : db.from("products").update(payload)
+            .eq("id",editingId);
+
+      const {data,error} = await query.select("id").single();
+
+      if (error || !data) {
+        msg.textContent = "儲存失敗：" +
+          (error?.message || "沒有寫入資料");
+        return;
+      }
+
+      clearForm();
+      msg.textContent = "✅ 商品儲存成功";
+      await loadProducts();
+    } catch (err) {
+      msg.textContent = "操作失敗：" + err.message;
+    } finally {
+      busy = false;
+      save.disabled = false;
+    }
+  });
+
+  el("productClear").onclick = () => {
+    if (!busy) {
+      clearForm();
+      msg.textContent = "";
+    }
+  };
+
+  el("productSearch").oninput = renderProducts;
+  el("productMore").onclick = () => loadProducts(false);
+
+  el("productBack").onclick = () => {
+    if (busy) return;
+    panel.hidden = true;
+    menu.style.display = "grid";
+    test.hidden = false;
+    status.hidden = false;
+  };
+
+  const productButton = [...menu.querySelectorAll("button")]
+    .find(b => b.textContent.includes("商品管理"));
+
+  productButton.onclick = () => {
+    menu.style.display = "none";
+    test.hidden = true;
+    status.hidden = true;
+    panel.hidden = false;
+    clearForm();
+    msg.textContent = "";
+    loadProducts();
+  };
+
+  db.auth.onAuthStateChange((event,session) => {
+    if (!session) {
+      version++;
+      products = [];
+      clearForm();
+      el("productList").replaceChildren();
+      el("productSearch").value = "";
+      msg.textContent = "";
+      panel.hidden = true;
+      menu.style.display = "grid";
+      test.hidden = false;
+      status.hidden = false;
+    }
+  });
+})();
+</script>
+<script>
+(() => {
+  const button = [...home.querySelectorAll("button")]
+    .find(b => b.textContent.includes("團購活動"));
+
+  const panel = document.createElement("section");
+  panel.hidden = true;
+
+  panel.innerHTML = `
+    <h2>📅 團購活動</h2>
+    <button id="actBack">返回首頁</button>
+    <h3>新增／修改活動</h3>
+
+    <form id="actForm">
+      <label>活動名稱</label>
+      <input id="actName" required>
+
+      <label>開始日期</label>
+      <input id="actStart" type="date" required>
+
+      <label>結束日期</label>
+      <input id="actEnd" type="date" required>
+
+      <label>活動狀態</label>
+      <select id="actStatus"
+        style="width:100%;padding:14px;border-radius:10px">
+        <option value="Draft">草稿</option>
+        <option value="Active">進行中</option>
+        <option value="Closed">已結束</option>
+      </select>
+
+      <label>備註</label>
+      <textarea id="actNotes"
+        style="width:100%;padding:12px;border-radius:10px"></textarea>
+
+      <button type="submit" id="actSave">儲存活動</button>
+      <button type="button" id="actClear">清空／新增活動</button>
+    </form>
+
+    <p id="actMsg"></p>
+    <hr>
+    <h3>活動清單</h3>
+    <div id="actList"></div>
+  `;
+
+  const logout = document.getElementById("logout");
+  home.insertBefore(panel, logout);
+
+  const el = id => document.getElementById(id);
+  const msg = el("actMsg");
+  let editingId = null;
+  let version = 0;
+
+  const labels = {
+    Draft: "草稿",
+    Active: "進行中",
+    Closed: "已結束"
+  };
+
+  function clearForm() {
+    editingId = null;
+    el("actForm").reset();
+    msg.textContent = "";
+  }
+
+  async function loadActivities() {
+    const current = ++version;
+    const list = el("actList");
+
+    list.textContent = "讀取中…";
+
+    const { data, error } = await db
+      .from("activities")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (current !== version) return;
+
+    list.replaceChildren();
+
+    if (error) {
+      list.textContent = "讀取失敗：" + error.message;
+      return;
+    }
+
+    if (!data.length) {
+      list.textContent = "目前尚無團購活動";
+      return;
+    }
+
+    data.forEach(a => {
+      const card = document.createElement("div");
+      card.style.cssText =
+        "border:1px solid #ccd5cf;border-radius:12px;padding:15px;margin:12px 0";
+
+      const title = document.createElement("strong");
+      title.textContent = a.activity_name;
+
+      const date = document.createElement("p");
+      date.textContent =
+        (a.start_date || "") + " ～ " +
+        (a.end_date || "");
+
+      const state = document.createElement("p");
+      state.textContent = labels[a.status] || a.status || "";
+
+      const edit = document.createElement("button");
+      edit.textContent = "修改活動";
+
+      edit.onclick = () => {
+        editingId = a.id;
+        el("actName").value = a.activity_name || "";
+        el("actStart").value = a.start_date || "";
+        el("actEnd").value = a.end_date || "";
+        el("actStatus").value = a.status || "Draft";
+        el("actNotes").value = a.notes || "";
+        msg.textContent = "";
+        panel.scrollIntoView({ behavior: "smooth" });
+      };
+
+      card.append(title, date, state, edit);
+      list.appendChild(card);
+    });
+  }
+
+  home.addEventListener("activities-updated", () => loadActivities());
+
+  el("actForm").onsubmit = async e => {
+    e.preventDefault();
+
+    const start = el("actStart").value;
+    const end = el("actEnd").value;
+    const name = el("actName").value.trim();
+
+    if (!name) {
+      msg.textContent = "請輸入活動名稱";
+      return;
+    }
+
+    if (end < start) {
+      msg.textContent = "❌ 結束日期不能早於開始日期";
+      return;
+    }
+
+    const values = {
+      activity_name: name,
+      start_date: start,
+      end_date: end,
+      status: el("actStatus").value,
+      notes: el("actNotes").value
+    };
+
+    const current = version;
+    el("actSave").disabled = true;
+    msg.textContent = "儲存中…";
+
+    try {
+      const query = editingId
+        ? db.from("activities").update(values).eq("id", editingId)
+        : db.from("activities").insert(values);
+
+      const { error } = await query.select("id").single();
+
+      if (current !== version) return;
+
+      if (error) {
+        msg.textContent = "❌ 儲存失敗：" + error.message;
+        return;
+      }
+
+      clearForm();
+      msg.textContent = "✅ 活動儲存成功";
+      await loadActivities();
+
+    } catch (error) {
+      if (current === version) {
+        msg.textContent = "❌ 連線失敗，請重新確認";
+      }
+    } finally {
+      el("actSave").disabled = false;
+    }
+  };
+
+  el("actClear").onclick = clearForm;
+
+  let hiddenItems = [];
+
+  button.onclick = () => {
+    hiddenItems = [...home.children]
+      .filter(node =>
+        node !== panel &&
+        node !== logout &&
+        !node.hidden &&
+        getComputedStyle(node).display !== "none"
+      );
+
+    hiddenItems.forEach(node => node.hidden = true);
+
+    panel.hidden = false;
+    clearForm();
+    loadActivities();
+  };
+
+  el("actBack").onclick = () => {
+    version++;
+    panel.hidden = true;
+    hiddenItems.forEach(node => node.hidden = false);
+    hiddenItems = [];
+    clearForm();
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      version++;
+      panel.hidden = true;
+      hiddenItems.forEach(node => node.hidden = false);
+      hiddenItems = [];
+      clearForm();
+      el("actList").replaceChildren();
+    }
+  });
+})();
+</script>
+<script>
+(() => {
+  const box = document.createElement("section");
+  box.hidden = true;
+  box.innerHTML = `
+    <h2>📦 活動商品設定</h2>
+    <label>選擇團購活動</label>
+    <select id="apActivity" style="width:100%;padding:12px"></select>
+    <label>選擇商品</label>
+    <select id="apProduct" style="width:100%;padding:12px"></select>
+    <label>活動售價</label>
+    <input id="apPrice" type="number" min="0" step="0.01">
+    <button id="apSave">加入活動商品</button>
+    <p id="apMessage"></p>
+  `;
+
+  const back = document.getElementById("actBack");
+  if (!back) return;
+
+  const entry = document.createElement("button");
+  entry.textContent = "📦 設定活動商品";
+  entry.type = "button";
+  back.after(entry, box);
+
+  const el = id => document.getElementById(id);
+
+  function fill(select, rows, name) {
+    select.replaceChildren();
+    rows.forEach(row => {
+      select.add(new Option(row[name], row.id));
+    });
+  }
+
+  entry.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    const [a, p] = await Promise.all([
+      db.from("activities").select("id,activity_name"),
+      db.from("products").select("id,product_name")
+    ]);
+
+    if (a.error || p.error) {
+      el("apMessage").textContent =
+        "讀取失敗：" + (a.error || p.error).message;
+      return;
+    }
+
+    fill(el("apActivity"), a.data, "activity_name");
+    fill(el("apProduct"), p.data, "product_name");
+    el("apMessage").textContent = "";
+  };
+
+  el("apSave").onclick = async () => {
+    const activity = el("apActivity").value;
+    const product = el("apProduct").value;
+    const price = el("apPrice").value;
+    const msg = el("apMessage");
+
+    if (!activity || !product || price === "" ||
+        !Number.isFinite(Number(price)) ||
+        Number(price) < 0) {
+      msg.textContent = "請完整填寫活動、商品及售價";
+      return;
+    }
+
+    const button = el("apSave");
+    button.disabled = true;
+
+    try {
+      const existing = await db.from("activity_products")
+        .select("id")
+        .eq("activity_id", activity)
+        .eq("product_id", product)
+        .limit(1);
+
+      if (existing.error) throw existing.error;
+
+      if (existing.data.length) {
+        msg.textContent = "此商品已加入活動";
+        return;
+      }
+
+      const { error } = await db.from("activity_products")
+        .insert({
+          activity_id: activity,
+          product_id: product,
+          activity_price: Number(price),
+          is_available: true
+        });
+
+      if (error) throw error;
+      msg.textContent = "✅ 活動商品加入成功";
+      el("apPrice").value = "";
+    } catch (e) {
+      msg.textContent = "儲存失敗：" + e.message;
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      box.hidden = true;
+      el("apActivity").replaceChildren();
+      el("apProduct").replaceChildren();
+      el("apPrice").value = "";
+      el("apMessage").textContent = "";
+    }
+  });
+})();
+</script>
+<script>
+(() => {
+  const back = document.getElementById("actBack");
+  if (!back || typeof db === "undefined") return;
+
+  const button = document.createElement("button");
+  button.textContent = "🏷️ 設定活動優惠";
+  back.after(button);
+
+  const box = document.createElement("section");
+  box.hidden = true;
+  button.after(box);
+
+  box.innerHTML = `
+    <h3>🏷️ 活動優惠設定</h3>
+
+    <label>選擇團購活動</label>
+    <select id="prActivity"></select>
+
+    <label>優惠名稱</label>
+    <input id="prName" placeholder="例如：雪糕4支118元">
+
+    <label>優惠類型</label>
+    <select id="prType">
+      <option value="bundle_price">固定組合價</option>
+      <option value="discount_rate">滿件折扣</option>
+      <option value="second_item_price">第二件特價</option>
+      <option value="discount_amount">滿件折抵</option>
+    </select>
+
+    <label>優惠件數</label>
+    <input id="prQty" type="number" min="1" value="2">
+
+    <label id="prValueLabel">組合優惠價格</label>
+    <input id="prValue" type="number" min="0" step="0.01">
+
+    <label>口味組合方式</label>
+    <select id="prMix">
+      <option value="same">相同商品</option>
+      <option value="mix">自由混搭</option>
+      <option value="fixed">指定組合</option>
+    </select>
+
+    <h4>適用商品</h4>
+    <div id="prProducts"></div>
+
+    <label>優惠狀態</label>
+    <select id="prActive">
+      <option value="true">啟用</option>
+      <option value="false">停用</option>
+    </select>
+
+    <label>備註</label>
+    <input id="prNotes">
+
+    <button id="prSave">儲存優惠</button>
+    <p id="prMessage"></p>
+  `;
+
+  const el = id => document.getElementById(id);
+  const msg = el("prMessage");
+  let revision = 0;
+
+  function updateType() {
+    const labels = {
+      bundle_price: "組合優惠價格",
+      discount_rate: "折扣百分比（79折請輸入79）",
+      second_item_price: "第二件價格",
+      discount_amount: "折抵金額"
+    };
+    el("prValueLabel").textContent =
+      labels[el("prType").value];
+
+    if (el("prType").value === "second_item_price") {
+      el("prQty").value = 2;
+      el("prQty").disabled = true;
+    } else {
+      el("prQty").disabled = false;
+    }
+  }
+
+  el("prType").onchange = updateType;
+
+  async function loadProducts() {
+    const current = ++revision;
+    const list = el("prProducts");
+    list.replaceChildren();
+
+    const activity = el("prActivity").value;
+    if (!activity) return;
+
+    try {
+      const { data, error } = await db
+        .from("activity_products")
+        .select("id,product_id,activity_price,products(product_name)")
+        .eq("activity_id", activity)
+        .eq("is_available", true);
+
+      if (current !== revision) return;
+      if (error) throw error;
+
+      for (const p of data || []) {
+        const row = document.createElement("div");
+        row.style.padding = "10px";
+        row.style.borderBottom = "1px solid #ddd";
+
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.value = p.id;
+        check.style.width = "auto";
+
+        const label = document.createElement("label");
+        label.append(check, " " +
+          (p.products?.product_name || p.product_id) +
+          "｜" + p.activity_price + "元");
+
+        const qty = document.createElement("input");
+        qty.type = "number";
+        qty.min = "1";
+        qty.value = "1";
+        qty.placeholder = "指定數量";
+        qty.className = "prRequired";
+
+        row.append(label, qty);
+        list.append(row);
+      }
+
+      if (!data?.length) {
+        list.textContent = "尚未加入活動商品";
+      }
+
+      updateMix();
+    } catch (e) {
+      msg.textContent = "讀取失敗：" + e.message;
+    }
+  }
+
+  function updateMix() {
+    box.querySelectorAll(".prRequired").forEach(q => {
+      q.style.display =
+        el("prMix").value === "fixed" ? "" : "none";
+    });
+  }
+
+  el("prMix").onchange = updateMix;
+  el("prActivity").onchange = loadProducts;
+
+  button.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    msg.textContent = "";
+    try {
+      const { data, error } = await db
+        .from("activities")
+        .select("id,activity_name")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      el("prActivity").replaceChildren();
+
+      for (const a of data || []) {
+        el("prActivity").add(
+          new Option(a.activity_name, a.id)
+        );
+      }
+
+      await loadProducts();
+      updateType();
+      el("prRefresh")?.click();
+    } catch (e) {
+      msg.textContent = "讀取失敗：" + e.message;
+    }
+  };
+
+  el("prSave").onclick = async () => {
+    const save = el("prSave");
+    const name = el("prName").value.trim();
+    const activity = el("prActivity").value;
+    const type = el("prType").value;
+    const qty = Number(el("prQty").value);
+    const raw = el("prValue").value;
+    const value = Number(raw);
+    const mix = el("prMix").value;
+
+    const selected = [...box.querySelectorAll(
+      '#prProducts input[type="checkbox"]:checked'
+    )];
+
+    if (!name || !activity || !raw ||
+        !Number.isInteger(qty) || qty < 1 ||
+        !Number.isFinite(value) || value < 0 ||
+        !selected.length) {
+      msg.textContent = "請完整填寫優惠資料並勾選商品";
+      return;
+    }
+
+    if (type === "discount_rate" &&
+        (value <= 0 || value > 100)) {
+      msg.textContent = "折扣請輸入1至100之間的百分比";
+      return;
+    }
+
+    const links = selected.map(c => ({
+      activity_product_id: c.value,
+      is_active: true,
+      required_quantity: mix === "fixed"
+        ? Number(c.closest("div")
+            .querySelector(".prRequired").value)
+        : null
+    }));
+
+    if (mix === "fixed" && (
+        links.some(p =>
+          !Number.isInteger(p.required_quantity) ||
+          p.required_quantity < 1) ||
+        links.reduce((s,p) =>
+          s + p.required_quantity, 0) !== qty
+    )) {
+      msg.textContent = "指定商品數量合計必須等於優惠件數";
+      return;
+    }
+
+    save.disabled = true;
+    let newId = null;
+
+    try {
+      const record = {
+        activity_id: activity,
+        promotion_name: name,
+        promotion_type: type,
+        min_quantity: qty,
+        bundle_price: type === "bundle_price"
+          ? value : null,
+        discount_rate: type === "discount_rate"
+          ? value / 100 : null,
+        second_item_price: type === "second_item_price"
+          ? value : null,
+        discount_amount: type === "discount_amount"
+          ? value : 0,
+        allow_mix: mix !== "same",
+        is_active: el("prActive").value === "true",
+        notes: el("prNotes").value
+      };
+
+      const { data, error } = await db
+        .from("promotions")
+        .insert(record)
+        .select("id")
+        .single();
+
+      if (error) throw error;
+      newId = data.id;
+
+      const result = await db
+        .from("promotion_products")
+        .insert(links.map(p => ({
+          ...p,
+          promotion_id: newId
+        })));
+
+      if (result.error) throw result.error;
+
+      msg.textContent = "✅ 優惠儲存成功";
+      el("prName").value = "";
+      el("prValue").value = "";
+      el("prNotes").value = "";
+      selected.forEach(c => c.checked = false);
+
+    } catch (e) {
+      let warning = "";
+      if (newId) {
+        const result = await db.from("promotions")
+          .delete().eq("id", newId);
+        if (result.error) {
+          warning = "；可能留下未完成的優惠，請勿重複儲存";
+        }
+      }
+      msg.textContent = "儲存失敗：" + e.message + warning;
+    } finally {
+      save.disabled = false;
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      revision++;
+      box.hidden = true;
+      el("prActivity").replaceChildren();
+      el("prProducts").replaceChildren();
+      el("prName").value = "";
+      el("prValue").value = "";
+      el("prNotes").value = "";
+      msg.textContent = "";
+    }
+  });
+})();
+</script>
+<script>
+(() => {
+  const save = document.getElementById("prSave");
+  if (!save || typeof db === "undefined") return;
+
+  const el = id => document.getElementById(id);
+
+  const section = document.createElement("section");
+  section.innerHTML = `
+    <hr>
+    <h3>📋 已設定的優惠</h3>
+    <button id="prRefresh">查看／更新優惠清單</button>
+    <div id="prList"></div>
+  `;
+  el("prMessage").after(section);
+
+  const types = {
+    bundle_price: "固定組合價",
+    discount_rate: "滿件折扣",
+    second_item_price: "第二件特價",
+    discount_amount: "滿件折抵"
+  };
+
+  function priceText(p) {
+    switch (p.promotion_type) {
+      case "bundle_price":
+        return p.bundle_price + "元";
+      case "discount_rate":
+        return Number(
+          (p.discount_rate * 100).toFixed(2)
+        ) + "%";
+      case "second_item_price":
+        return "第二件" + p.second_item_price + "元";
+      case "discount_amount":
+        return "折抵" + p.discount_amount + "元";
+      default:
+        return "";
+    }
+  }
+
+  async function load() {
+    const list = el("prList");
+    const activity = el("prActivity").value;
+    list.textContent = "讀取中…";
+
+    if (!activity) {
+      list.textContent = "請先選擇團購活動";
+      return;
+    }
+
+    const { data, error } = await db
+      .from("promotions")
+      .select("*")
+      .eq("activity_id", activity)
+      .order("created_at", { ascending: false });
+
+    if (activity !== el("prActivity").value) return;
+
+    list.replaceChildren();
+
+    if (error) {
+      list.textContent = "優惠讀取失敗：" + error.message;
+      return;
+    }
+
+    if (!data?.length) {
+      list.textContent = "此活動尚未設定優惠，請確認選擇的活動";
+      return;
+    }
+
+    for (const p of data) {
+      const card = document.createElement("div");
+      card.style.cssText =
+        "border:1px solid #ddd;border-radius:12px;" +
+        "padding:12px;margin:12px 0;";
+
+      const title = document.createElement("h4");
+      title.textContent = p.promotion_name;
+
+      const info = document.createElement("p");
+      info.textContent =
+        (types[p.promotion_type] || p.promotion_type) +
+        "｜" + p.min_quantity + "件｜" +
+        priceText(p);
+
+      const status = document.createElement("p");
+      status.textContent = p.is_active
+        ? "🟢 啟用中" : "⚪ 已停用";
+
+      const edit = document.createElement("button");
+      edit.textContent = "✏️ 修改優惠";
+
+      const toggle = document.createElement("button");
+      toggle.textContent = p.is_active
+        ? "停用優惠" : "重新啟用";
+
+      toggle.onclick = async () => {
+        toggle.disabled = true;
+
+        const { error } = await db
+          .from("promotions")
+          .update({ is_active: !p.is_active })
+          .eq("id", p.id);
+
+        if (error) {
+          alert(error.message);
+          toggle.disabled = false;
+        } else {
+          await load();
+        }
+      };
+
+      const editor = document.createElement("div");
+      editor.hidden = true;
+
+      editor.innerHTML = `
+        <label>優惠名稱</label>
+        <input class="editName">
+
+        <label>優惠價格／折扣</label>
+        <input class="editValue"
+          type="number" min="0" step="0.01">
+
+        <label>備註</label>
+        <input class="editNotes">
+
+        <button class="editSave">確認修改</button>
+        <button class="editCancel">取消修改</button>
+        <p class="editMessage"></p>
+      `;
+
+      const field = name =>
+        editor.querySelector("." + name);
+
+      edit.onclick = () => {
+        editor.hidden = !editor.hidden;
+
+        field("editName").value = p.promotion_name;
+        field("editNotes").value = p.notes || "";
+
+        const values = {
+          bundle_price: p.bundle_price,
+          discount_rate: p.discount_rate * 100,
+          second_item_price: p.second_item_price,
+          discount_amount: p.discount_amount
+        };
+
+        field("editValue").value =
+          values[p.promotion_type] ?? "";
+      };
+
+      field("editCancel").onclick = () => {
+        editor.hidden = true;
+      };
+
+      field("editSave").onclick = async () => {
+        const name = field("editName").value.trim();
+        const raw = field("editValue").value;
+        const value = Number(raw);
+        const message = field("editMessage");
+
+        if (!name || !raw ||
+            !Number.isFinite(value) || value < 0) {
+          message.textContent = "請輸入正確資料";
+          return;
+        }
+
+        if (p.promotion_type === "discount_rate" &&
+            (value <= 0 || value > 100)) {
+          message.textContent = "折扣請輸入1至100";
+          return;
+        }
+
+        const update = {
+          promotion_name: name,
+          notes: field("editNotes").value
+        };
+
+        switch (p.promotion_type) {
+          case "bundle_price":
+            update.bundle_price = value;
+            break;
+          case "discount_rate":
+            update.discount_rate = value / 100;
+            break;
+          case "second_item_price":
+            update.second_item_price = value;
+            break;
+          case "discount_amount":
+            update.discount_amount = value;
+            break;
+          default:
+            message.textContent = "不支援的優惠類型";
+            return;
+        }
+
+        field("editSave").disabled = true;
+
+        const { error } = await db
+          .from("promotions")
+          .update(update)
+          .eq("id", p.id);
+
+        if (error) {
+          message.textContent = error.message;
+          field("editSave").disabled = false;
+        } else {
+          await load();
+        }
+      };
+
+      card.append(
+        title, info, status, edit, toggle, editor
+      );
+      list.append(card);
+    }
+  }
+
+  el("prRefresh").onclick = load;
+
+  el("prActivity").addEventListener("change", () => {
+    load();
+  });
+
+  const observer = new MutationObserver(() => {
+    if (el("prMessage").textContent.includes("儲存成功")) {
+      load();
+    }
+  });
+
+  observer.observe(el("prMessage"), {
+    childList: true,
+    characterData: true,
+    subtree: true
+  });
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      el("prList").replaceChildren();
+    }
+  });
+})();
+</script>
+<script>
+(() => {
+  const back = document.getElementById("actBack");
+  if (!back || typeof db === "undefined") return;
+
+  const button = document.createElement("button");
+  button.textContent = "🔤 設定喊單代號";
+  back.after(button);
+
+  const box = document.createElement("section");
+  box.hidden = true;
+  button.after(box);
+
+  box.innerHTML = `
+    <h3>🔤 喊單代號設定</h3>
+
+    <label>選擇團購活動</label>
+    <select id="ocActivity"></select>
+
+    <p>請設定商品及優惠的喊單代號。
+    沒有代號的項目可以留空。</p>
+
+    <h4>📦 商品代號</h4>
+    <div id="ocProducts"></div>
+
+    <h4>🏷️ 優惠組合代號</h4>
+    <div id="ocPromotions"></div>
+
+    <button id="ocSave">儲存喊單代號</button>
+    <p id="ocMessage"></p>
+  `;
+
+  const el = id => document.getElementById(id);
+  const msg = el("ocMessage");
+  let revision = 0;
+
+  function addRow(container, item, name, table) {
+    const row = document.createElement("div");
+    row.style.cssText =
+      "border:1px solid #ddd;border-radius:10px;" +
+      "padding:12px;margin:10px 0;";
+
+    const label = document.createElement("label");
+    label.textContent = name;
+
+    const input = document.createElement("input");
+    input.placeholder = "例如：A";
+    input.value = item.option_code || "";
+    input.maxLength = 8;
+    input.dataset.id = item.id;
+    input.dataset.table = table;
+    input.dataset.original = item.option_code || "";
+    input.className = "ocCode";
+
+    input.oninput = () => {
+      input.value = input.value
+        .normalize("NFKC").toUpperCase();
+    };
+
+    row.append(label, input);
+    container.append(row);
+  }
+
+  async function load() {
+    const current = ++revision;
+    const activity = el("ocActivity").value;
+
+    el("ocProducts").replaceChildren();
+    el("ocPromotions").replaceChildren();
+    el("ocSave").disabled = true;
+    msg.textContent = "讀取中…";
+
+    if (!activity) {
+      msg.textContent = "請先建立團購活動";
+      return;
+    }
+
+    try {
+      const [products, promotions] =
+        await Promise.all([
+          db.from("activity_products")
+            .select(
+              "id,option_code,activity_price," +
+              "products(product_name)"
+            )
+            .eq("activity_id", activity)
+            .eq("is_available", true),
+
+          db.from("promotions")
+            .select(
+              "id,promotion_name,option_code,is_active"
+            )
+            .eq("activity_id", activity)
+        ]);
+
+      if (current !== revision) return;
+      if (products.error) throw products.error;
+      if (promotions.error) throw promotions.error;
+
+      for (const p of products.data || []) {
+        addRow(
+          el("ocProducts"),
+          p,
+          (p.products?.product_name || "商品") +
+          "｜" + p.activity_price + "元",
+          "activity_products"
+        );
+      }
+
+      for (const p of promotions.data || []) {
+        addRow(
+          el("ocPromotions"),
+          p,
+          p.promotion_name +
+          (p.is_active ? "" : "（已停用）"),
+          "promotions"
+        );
+      }
+
+      if (!products.data?.length) {
+        el("ocProducts").textContent =
+          "尚未設定活動商品";
+      }
+
+      if (!promotions.data?.length) {
+        el("ocPromotions").textContent =
+          "尚未設定活動優惠";
+      }
+
+      msg.textContent = "";
+      el("ocSave").disabled = false;
+
+    } catch (e) {
+      msg.textContent = "讀取失敗：" + e.message;
+    }
+  }
+
+  button.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    el("ocSave").disabled = true;
+
+    const { data, error } = await db
+      .from("activities")
+      .select("id,activity_name")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      msg.textContent = error.message;
+      return;
+    }
+
+    el("ocActivity").replaceChildren();
+
+    for (const a of data || []) {
+      el("ocActivity").add(
+        new Option(a.activity_name, a.id)
+      );
+    }
+
+    await load();
+  };
+
+  el("ocActivity").onchange = load;
+
+  el("ocSave").onclick = async () => {
+    const inputs = [
+      ...box.querySelectorAll(".ocCode")
+    ];
+
+    const codes = new Set();
+
+    for (const input of inputs) {
+      const code = input.value
+        .normalize("NFKC").trim().toUpperCase();
+
+      input.value = code;
+
+      if (!code) continue;
+
+      if (!/^[A-Z0-9]{1,8}$/.test(code)) {
+        msg.textContent =
+          "代號只能使用英文字母或數字";
+        return;
+      }
+
+      if (codes.has(code)) {
+        msg.textContent =
+          "代號 " + code + " 重複，請修改";
+        return;
+      }
+
+      codes.add(code);
+    }
+
+    el("ocSave").disabled = true;
+    el("ocActivity").disabled = true;
+    inputs.forEach(i => i.disabled = true);
+
+    let saved = 0;
+
+    try {
+      for (const input of inputs) {
+        if (input.value === input.dataset.original) {
+          continue;
+        }
+
+        const { error } = await db
+          .from(input.dataset.table)
+          .update({
+            option_code: input.value || null
+          })
+          .eq("id", input.dataset.id)
+          .eq("activity_id", el("ocActivity").value);
+
+        if (error) throw error;
+
+        input.dataset.original = input.value;
+        saved++;
+      }
+
+      msg.textContent = "✅ 喊單代號儲存成功";
+
+    } catch (e) {
+      msg.textContent =
+        "已更新 " + saved + " 筆，" +
+        "其餘儲存失敗：" + e.message;
+    } finally {
+      el("ocSave").disabled = false;
+      el("ocActivity").disabled = false;
+      inputs.forEach(i => i.disabled = false);
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      revision++;
+      box.hidden = true;
+      el("ocActivity").replaceChildren();
+      el("ocProducts").replaceChildren();
+      el("ocPromotions").replaceChildren();
+      msg.textContent = "";
+    }
+  });
+})();
+</script>
+<script>
+(() => {
+  if (typeof db === "undefined") return;
+
+  const menu = [...document.querySelectorAll("button")]
+    .find(b => b.textContent.includes("喊單匯入"));
+
+  if (!menu) return;
+
+  const box = document.createElement("section");
+  box.hidden = true;
+  menu.after(box);
+
+  box.innerHTML = `
+    <h3>📝 LINE 喊單匯入</h3>
+
+    <label>選擇團購活動</label>
+    <select id="imActivity"></select>
+
+    <label>貼上喊單文字</label>
+    <textarea id="imText" rows="8"
+      style="width:100%;box-sizing:border-box"
+      placeholder="王小姐 A+2、B+1&#10;簡小姐 B+3">
+    </textarea>
+
+    <button id="imPreview">辨識喊單與計價</button>
+    <button id="imClear">清除內容</button>
+    <p id="imMessage"></p>
+    <div id="imResult"></div>
+  `;
+
+  const el = id => document.getElementById(id);
+  let revision = 0;
+
+  const money = n =>
+    Math.round((n + Number.EPSILON) * 100) / 100;
+
+  menu.addEventListener("click", async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    const { data, error } = await db
+      .from("activities")
+      .select("id,activity_name")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      el("imMessage").textContent = error.message;
+      return;
+    }
+
+    el("imActivity").replaceChildren();
+
+    for (const a of data || []) {
+      el("imActivity").add(
+        new Option(a.activity_name, a.id)
+      );
+    }
+  });
+
+  function clearResult() {
+    revision++;
+    el("imResult").replaceChildren();
+    el("imMessage").textContent = "";
+  }
+
+  el("imText").oninput = clearResult;
+  el("imActivity").onchange = clearResult;
+
+  el("imClear").onclick = () => {
+    el("imText").value = "";
+    clearResult();
+  };
+
+  el("imPreview").onclick = async () => {
+    clearResult();
+
+    const current = revision;
+    const activity = el("imActivity").value;
+    const raw = el("imText").value.trim();
+    const result = el("imResult");
+    const msg = el("imMessage");
+
+    if (!activity || !raw) {
+      msg.textContent = "請選擇活動並貼上喊單文字";
+      return;
+    }
+
+    msg.textContent = "辨識中…";
+    el("imPreview").disabled = true;
+
+    try {
+      const [products, promotions] =
+        await Promise.all([
+          db.from("activity_products")
+            .select(
+              "id,option_code,activity_price,allow_single_purchase," +
+              "products(product_name)"
+            )
+            .eq("activity_id", activity)
+            .eq("is_available", true),
+
+          db.from("promotions")
+            .select("*")
+            .eq("activity_id", activity)
+            .eq("is_active", true)
+        ]);
+
+      if (current !== revision) return;
+      if (products.error) throw products.error;
+      if (promotions.error) throw promotions.error;
+
+      const auto = (promotions.data || []).filter(p => p.purchase_mode === "automatic");
+      const links = auto.length ? await db.from("promotion_products").select("*").in("promotion_id",auto.map(p=>p.id)).eq("is_active",true) : {data:[]};
+      if (links.error) throw links.error;
+      if (current !== revision) return;
+      const codes = new Map();
+
+      function addCode(code, item) {
+        if (!code) return;
+        code = code.trim().toUpperCase();
+
+        if (codes.has(code)) {
+          throw new Error("代號重複：" + code);
+        }
+
+        codes.set(code, item);
+      }
+
+      for (const p of products.data || []) {
+        addCode(p.option_code, {
+          name: p.products?.product_name || "商品",
+          price: Number(p.activity_price),
+          id: p.id, single: p.allow_single_purchase !== false, supported: true
+        });
+      }
+
+      for (const p of promotions.data || []) {
+        addCode(p.option_code, {
+          name: p.promotion_name,
+          price: Number(p.bundle_price),
+          supported:
+            p.promotion_type === "bundle_price" &&
+            p.bundle_price !== null
+        });
+      }
+
+      let total = 0;
+      let valid = 0;
+      let invalid = 0;
+
+      const lines = raw.split(/\r?\n/)
+        .filter(s => s.trim());
+
+      const customerGroups = new Map();
+      for (const original of lines) {
+        const line = original.normalize("NFKC")
+          .trim();
+
+        const card = document.createElement("div");
+        card.style.cssText =
+          "border:1px solid #ddd;" +
+          "border-radius:12px;padding:12px;" +
+          "margin:10px 0;";
+
+        const heading = document.createElement("h4");
+        heading.textContent = original;
+        card.append(heading);
+
+        const pattern =
+          /([A-Z0-9]{1,8})\s*\+\s*(\d+)/gi;
+
+        const matches = [...line.matchAll(pattern)];
+        const errors = [];
+        let subtotal = 0;
+        const quantities = new Map();
+
+        const customer = matches.length
+          ? line.slice(0, matches[0].index)
+              .replace(/[\s:：]+$/, "").trim()
+          : "";
+
+        if (!customer) {
+          errors.push("無法辨識客人名稱");
+        }
+
+        if (!matches.length) {
+          errors.push("無法辨識喊單代號");
+        }
+
+        if (matches.length) {
+          const remaining = line
+            .slice(matches[0].index)
+            .replace(pattern, "")
+            .replace(/[\s,，、;；]+/g, "");
+
+          if (remaining) {
+            errors.push("未辨識文字：" + remaining);
+          }
+        }
+
+        for (const m of matches) {
+          const code = m[1].toUpperCase();
+          const qty = Number(m[2]);
+          const item = codes.get(code);
+
+          if (!item) {
+            errors.push("找不到代號：" + code);
+            continue;
+          }
+
+          if (!Number.isSafeInteger(qty) || qty < 1) {
+            errors.push(code + " 的數量不正確");
+            continue;
+          }
+
+          if (!item.supported) {
+            errors.push(code + " 尚未支援此優惠計算");
+            continue;
+          }
+
+          if (!Number.isFinite(item.price) ||
+              item.price < 0) {
+            errors.push(code + " 的價格不正確");
+            continue;
+          }
+
+          if (item.single === false) { errors.push(code + " 不允許單品購買"); continue; }
+          if (item.id != null) { const old = quantities.get(String(item.id)); quantities.set(String(item.id), {item, qty: (old?.qty || 0)+qty}); }
+          const amount = money(item.price * qty);
+          subtotal = money(subtotal + amount);
+
+          const detail = document.createElement("p");
+          detail.textContent =
+            code + "｜" + item.name +
+            " × " + qty + "＝" + amount + "元";
+
+          card.append(detail);
+        }
+
+        const summary = document.createElement("p");
+
+        if (errors.length) {
+          invalid++;
+          summary.style.color = "#b91c1c";
+          summary.textContent =
+            "⚠️ " + errors.join("；");
+        } else {
+          valid++;
+          let group = customerGroups.get(customer);
+          if (!group) { group = {subtotal:0, quantities:new Map(), count:0}; customerGroups.set(customer,group); }
+          group.count++;
+          group.subtotal = money(group.subtotal + subtotal);
+          for (const [id,x] of quantities) {
+            const old = group.quantities.get(id);
+            group.quantities.set(id,{item:x.item,qty:(old?.qty || 0)+x.qty});
+          }
+          summary.textContent = "客人：" + customer + "｜原始小計：" + subtotal + "元（優惠於下方彙整）";
+        }
+
+        card.append(summary);
+        result.append(card);
+      }
+
+      const groupTitle = document.createElement("h3");
+      groupTitle.textContent = "依客人彙整優惠";
+      result.append(groupTitle);
+      for (const [customer,group] of customerGroups) {
+        const card = document.createElement("div");
+        card.style.cssText = "border:1px solid #ccd5cf;border-radius:12px;padding:12px;margin:10px 0";
+        const heading = document.createElement("h4");
+        heading.textContent = customer + "｜" + group.count + "筆喊單";
+        card.append(heading);
+        const quantities = group.quantities;
+        let subtotal = group.subtotal;
+        const errors = [];
+        for (const x of quantities.values()) {
+          const detail = document.createElement("p");
+          detail.textContent = x.item.name + " × " + x.qty + "＝" + money(x.item.price*x.qty) + "元";
+          card.append(detail);
+        }
+        const used = new Set();
+        for (const promo of auto) {
+          const eligible = links.data.filter(l=>String(l.promotion_id)===String(promo.id));
+          const entries = [...quantities.values()].filter(x=>eligible.some(l=>String(l.activity_product_id)===String(x.item.id)));
+          if (!entries.length) continue;
+          const n = Number(promo.min_quantity);
+          if (!Number.isSafeInteger(n)||n<1 || eligible.some(l=>l.required_quantity!=null) || (promo.allow_mix && entries.length>1) || entries.some(x=>used.has(String(x.item.id)))) { errors.push("此優惠組合需人工確認："+promo.promotion_name); continue; }
+          let remaining = promo.repeat_discount === false ? 1 : Infinity;
+          for (const x of entries) {
+            const groups = Math.min(remaining,Math.floor(x.qty/n));
+            if (!groups) continue;
+            let groupPrice;
+            switch(promo.promotion_type){
+              case "bundle_price": groupPrice=Number(promo.bundle_price); break;
+              case "discount_rate": groupPrice=x.item.price*n*Number(promo.discount_rate); break;
+              case "discount_amount": groupPrice=Math.max(0,x.item.price*n-Number(promo.discount_amount)); break;
+              case "second_item_price": groupPrice=x.item.price+Number(promo.second_item_price); break;
+              default: errors.push("不支援的優惠"); continue;
+            }
+            const discount=money(Math.max(0,x.item.price*n-groupPrice)*groups);
+            subtotal=money(subtotal-discount); remaining-=groups; used.add(String(x.item.id));
+            const detail=document.createElement("p"); detail.textContent=promo.promotion_name+" × "+groups+"｜折抵 "+discount+"元"; card.append(detail);
+          }
+        }
+        const summary = document.createElement("p");
+        if (errors.length) {
+          valid -= group.count; invalid += group.count;
+          summary.style.color = "#b91c1c";
+          summary.textContent = "⚠️ " + errors.join("；") + "（此客人未計入有效合計）";
+        } else {
+          total = money(total + subtotal);
+          summary.textContent = "應付金額：" + subtotal + "元";
+        }
+        card.append(summary); result.append(card);
+      }
+
+      const footer = document.createElement("h3");
+      footer.textContent =
+        "有效訂單合計：" + total + "元";
+
+      result.append(footer);
+
+      msg.textContent =
+        "辨識成功 " + valid + " 筆，" +
+        "待修正 " + invalid + " 筆。" +
+        "目前僅預覽，尚未儲存訂單。";
+
+    } catch (e) {
+      msg.textContent = "辨識失敗：" + e.message;
+    } finally {
+      el("imPreview").disabled = false;
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      box.hidden = true;
+      el("imText").value = "";
+      el("imActivity").replaceChildren();
+      clearResult();
+    }
+  });
+})();
+</script>
+<style>
+#imText {
+  width: 100%;
+  box-sizing: border-box;
+}
+#imResult {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+#imText,
+#imResult {
+  max-width: 100%;
+}
+.purchase-rule-card {
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.purchase-rule-card select {
+  width: 100%;
+  padding: 10px;
+  margin: 8px 0;
+  font-size: 16px;
+}
+</style>
+
+<script>
+(() => {
+  if (typeof db === "undefined") return;
+
+  const el = id => document.getElementById(id);
+
+  const preview = el("imText")?.closest("section");
+
+  if (preview) {
+    preview.style.gridColumn = "1 / -1";
+    preview.style.width = "100%";
+    preview.style.minWidth = "0";
+    preview.style.boxSizing = "border-box";
+  }
+
+  const back = el("actBack");
+  if (!back) return;
+
+  const button = document.createElement("button");
+  button.textContent = "🛒 設定購買方式";
+  back.after(button);
+
+  const box = document.createElement("section");
+  box.hidden = true;
+  button.after(box);
+
+  box.innerHTML = `
+    <h3>🛒 購買方式與優惠規則</h3>
+
+    <label>選擇團購活動</label>
+    <select id="ruleActivity"></select>
+
+    <h4>📦 單品購買設定</h4>
+    <div id="ruleProducts"></div>
+
+    <h4>🏷️ 優惠購買方式</h4>
+    <div id="rulePromotions"></div>
+
+    <button id="ruleSave">儲存購買規則</button>
+    <p id="ruleMessage"></p>
+  `;
+
+  const msg = el("ruleMessage");
+  let revision = 0;
+
+  function createSelect(options, value) {
+    const select = document.createElement("select");
+
+    for (const [v, label] of options) {
+      select.add(new Option(label, v));
+    }
+
+    select.value = String(value);
+    return select;
+  }
+
+  function addProduct(p) {
+    const card = document.createElement("div");
+    card.className = "purchase-rule-card";
+    card.dataset.id = p.id;
+    card.dataset.table = "activity_products";
+
+    const title = document.createElement("h4");
+    title.textContent =
+      (p.products?.product_name || "商品") +
+      "｜" + p.activity_price + "元";
+
+    const select = createSelect([
+      ["true", "允許單品購買"],
+      ["false", "只能透過優惠組合購買"]
+    ], p.allow_single_purchase);
+
+    select.className = "ruleSingle";
+
+    card.append(title, select);
+    el("ruleProducts").append(card);
+  }
+
+  function addPromotion(p) {
+    const card = document.createElement("div");
+    card.className = "purchase-rule-card";
+    card.dataset.id = p.id;
+    card.dataset.table = "promotions";
+
+    const title = document.createElement("h4");
+    title.textContent = p.promotion_name;
+
+    const label = document.createElement("label");
+    label.textContent = "購買方式";
+
+    const mode = createSelect([
+      ["bundle", "整組購買（+1代表一組）"],
+      ["automatic", "依實際件數自動套用優惠"]
+    ], p.purchase_mode || "bundle");
+
+    mode.className = "ruleMode";
+
+    const repeatLabel = document.createElement("label");
+    repeatLabel.textContent = "是否重複享有優惠";
+
+    const repeat = createSelect([
+      ["true", "可以重複享有優惠"],
+      ["false", "每筆訂單限享一次優惠"]
+    ], p.repeat_discount);
+
+    repeat.className = "ruleRepeat";
+
+    const note = document.createElement("p");
+    note.textContent =
+      "例如：滿4件優惠，購買8件可享兩次。";
+
+    card.append(
+      title, label, mode,
+      repeatLabel, repeat, note
+    );
+
+    el("rulePromotions").append(card);
+  }
+
+  async function load() {
+    const current = ++revision;
+    const activity = el("ruleActivity").value;
+
+    el("ruleProducts").replaceChildren();
+    el("rulePromotions").replaceChildren();
+    el("ruleSave").disabled = true;
+    msg.textContent = "讀取中…";
+
+    if (!activity) {
+      msg.textContent = "請先選擇團購活動";
+      return;
+    }
+
+    try {
+      const [products, promotions] =
+        await Promise.all([
+          db.from("activity_products")
+            .select(
+              "id,activity_price," +
+              "allow_single_purchase," +
+              "products(product_name)"
+            )
+            .eq("activity_id", activity),
+
+          db.from("promotions")
+            .select(
+              "id,promotion_name," +
+              "purchase_mode,repeat_discount"
+            )
+            .eq("activity_id", activity)
+        ]);
+
+      if (current !== revision) return;
+      if (products.error) throw products.error;
+      if (promotions.error) throw promotions.error;
+
+      for (const p of products.data || []) {
+        addProduct(p);
+      }
+
+      for (const p of promotions.data || []) {
+        addPromotion(p);
+      }
+
+      if (!products.data?.length) {
+        el("ruleProducts").textContent =
+          "尚未設定活動商品";
+      }
+
+      if (!promotions.data?.length) {
+        el("rulePromotions").textContent =
+          "尚未設定優惠";
+      }
+
+      msg.textContent = "";
+      el("ruleSave").disabled = false;
+
+    } catch (e) {
+      msg.textContent = "讀取失敗：" + e.message;
+    }
+  }
+
+  button.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+
+    el("ruleSave").disabled = true;
+
+    const { data, error } = await db
+      .from("activities")
+      .select("id,activity_name")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      msg.textContent = error.message;
+      return;
+    }
+
+    el("ruleActivity").replaceChildren();
+
+    for (const a of data || []) {
+      el("ruleActivity").add(
+        new Option(a.activity_name, a.id)
+      );
+    }
+
+    await load();
+  };
+
+  el("ruleActivity").onchange = load;
+
+  el("ruleSave").onclick = async () => {
+    const cards = [
+      ...box.querySelectorAll(".purchase-rule-card")
+    ];
+
+    const activity = el("ruleActivity").value;
+    const controls = [...box.querySelectorAll("select")];
+
+    el("ruleSave").disabled = true;
+    controls.forEach(c => c.disabled = true);
+
+    let saved = 0;
+
+    try {
+      for (const card of cards) {
+        let update;
+
+        if (card.dataset.table === "activity_products") {
+          update = {
+            allow_single_purchase:
+              card.querySelector(".ruleSingle")
+                .value === "true"
+          };
+        } else {
+          update = {
+            purchase_mode:
+              card.querySelector(".ruleMode").value,
+            repeat_discount:
+              card.querySelector(".ruleRepeat")
+                .value === "true"
+          };
+        }
+
+        const { error } = await db
+          .from(card.dataset.table)
+          .update(update)
+          .eq("id", card.dataset.id)
+          .eq("activity_id", activity);
+
+        if (error) throw error;
+        saved++;
+      }
+
+      msg.textContent = "✅ 購買規則儲存成功";
+
+    } catch (e) {
+      msg.textContent =
+        "已更新 " + saved + " 筆，" +
+        "其餘儲存失敗：" + e.message;
+    } finally {
+      el("ruleSave").disabled = false;
+      controls.forEach(c => c.disabled = false);
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      revision++;
+      box.hidden = true;
+      el("ruleActivity").replaceChildren();
+      el("ruleProducts").replaceChildren();
+      el("rulePromotions").replaceChildren();
+      msg.textContent = "";
+    }
+  });
+})();
+</script>
+<style>
+#quickActivity {
+  width: 100%;
+  grid-column: 1 / -1;
+  box-sizing: border-box;
+}
+#quickActivity[hidden] {
+  display: none !important;
+}
+#quickActivity details {
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 14px;
+  margin: 12px 0;
+}
+#quickActivity summary {
+  font-size: 17px;
+  font-weight: bold;
+  cursor: pointer;
+}
+#quickActivity input,
+#quickActivity select {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+  margin: 6px 0 12px;
+}
+#quickActivity input[type="checkbox"] {
+  width: auto;
+}
+#quickActivity label {
+  display: block;
+}
+.quick-product {
+  border-bottom: 1px solid #ddd;
+  padding: 12px 0;
+}
+</style>
+
+<script>
+(() => {
+  if (typeof db === "undefined") return;
+
+  const back = document.getElementById("actBack");
+  if (!back) return;
+
+  const button = document.createElement("button");
+  button.textContent = "✨ 快速新增活動";
+  back.after(button);
+
+  const box = document.createElement("section");
+  box.id = "quickActivity";
+  box.hidden = true;
+  button.after(box);
+
+  box.innerHTML = `
+    <h2>✨ 快速新增活動</h2>
+
+    <details open>
+      <summary>① 活動基本資料</summary>
+
+      <label>活動名稱</label>
+      <input id="qaName"
+        placeholder="例如：雪糕團購">
+
+      <label>開始日期</label>
+      <input id="qaStart" type="date">
+
+      <label>結單日期</label>
+      <input id="qaEnd" type="date">
+
+      <label>備註（選填）</label>
+      <input id="qaNotes">
+    </details>
+
+    <details open>
+      <summary>② 選擇商品及價格</summary>
+
+      <input id="qaSearch"
+        placeholder="搜尋商品名稱或編號">
+
+      <div id="qaProducts"></div>
+
+      <p id="qaCount">已選擇 0 項商品</p>
+    </details>
+
+    <details>
+      <summary>③ 優惠設定（選填）</summary>
+
+      <label>
+        <input id="qaUsePromo" type="checkbox">
+        本次活動有優惠
+      </label>
+
+      <div id="qaPromoFields" hidden>
+
+        <label>優惠名稱</label>
+        <input id="qaPromoName"
+          placeholder="例如：4支118元">
+
+        <label>優惠類型</label>
+        <select id="qaPromoType">
+          <option value="bundle_price">
+            固定組合價
+          </option>
+          <option value="discount_rate">
+            滿件折扣
+          </option>
+          <option value="second_item_price">
+            第二件特價
+          </option>
+          <option value="discount_amount">
+            滿件折抵
+          </option>
+        </select>
+
+        <label>優惠件數</label>
+        <input id="qaQty" type="number"
+          min="1" value="2">
+
+        <label id="qaValueLabel">優惠價格</label>
+        <input id="qaValue" type="number"
+          min="0" step="0.01">
+
+        <label>優惠代號（選填）</label>
+        <input id="qaPromoCode"
+          placeholder="例如：C">
+
+        <label>購買方式</label>
+        <select id="qaMode">
+          <option value="automatic">
+            依件數自動套用優惠
+          </option>
+          <option value="bundle">
+            整組購買
+          </option>
+        </select>
+
+        <label>
+          <input id="qaMix" type="checkbox">
+          允許不同商品混搭
+        </label>
+
+        <label>
+          <input id="qaRepeat" type="checkbox"
+            checked>
+          可重複享有優惠
+        </label>
+
+        <h4>適用優惠的商品</h4>
+        <div id="qaEligible"></div>
+      </div>
+    </details>
+
+    <button id="qaSave" disabled>
+      儲存並建立活動
+    </button>
+
+    <p id="qaMessage"></p>
+  `;
+
+  const el = id => document.getElementById(id);
+
+  function today() {
+    const d = new Date();
+    return d.getFullYear() + "-" +
+      String(d.getMonth() + 1).padStart(2,"0") +
+      "-" +
+      String(d.getDate()).padStart(2,"0");
+  }
+
+  el("qaStart").value = today();
+  el("qaEnd").value = today();
+
+  function updateSelected() {
+    const selected = [
+      ...box.querySelectorAll(".qaCheck:checked")
+    ];
+
+    el("qaCount").textContent =
+      "已選擇 " + selected.length + " 項商品";
+
+    const eligible = el("qaEligible");
+
+    const old = new Map(
+      [...eligible.querySelectorAll("input")]
+        .map(c => [c.value, c.checked])
+    );
+
+    eligible.replaceChildren();
+
+    for (const c of selected) {
+      const label = document.createElement("label");
+      const check = document.createElement("input");
+
+      check.type = "checkbox";
+      check.value = c.value;
+      check.className = "qaEligibleCheck";
+      check.checked = old.has(c.value)
+        ? old.get(c.value) : true;
+
+      label.append(check, " " + c.dataset.name);
+      eligible.append(label);
+    }
+  }
+
+  function addProduct(p) {
+    const row = document.createElement("div");
+    row.className = "quick-product";
+
+    row.dataset.search = (
+      p.product_name + " " +
+      (p.product_code || "")
+    ).toLowerCase();
+
+    const label = document.createElement("label");
+    const check = document.createElement("input");
+
+    check.type = "checkbox";
+    check.className = "qaCheck";
+    check.value = p.id;
+    check.dataset.name = p.product_name;
+
+    label.append(check, " " + p.product_name);
+
+    const fields = document.createElement("div");
+    fields.hidden = true;
+
+    fields.innerHTML = `
+      <label>活動價格</label>
+      <input class="qaPrice" type="number"
+        min="0" step="0.01">
+
+      <label>喊單代號（選填）</label>
+      <input class="qaCode"
+        placeholder="例如：A">
+
+      <label>
+        <input class="qaSingle"
+          type="checkbox" checked>
+        允許單品購買
+      </label>
+    `;
+
+    check.onchange = () => {
+      fields.hidden = !check.checked;
+      updateSelected();
+    };
+
+    row.append(label, fields);
+    el("qaProducts").append(row);
+  }
+
+  let loaded = false;
+
+  button.onclick = async () => {
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+    if (loaded) return;
+
+    el("qaMessage").textContent = "讀取商品中…";
+
+    const { data, error } = await db
+      .from("products")
+      .select("id,product_name,product_code")
+      .order("product_name");
+
+    if (error) {
+      el("qaMessage").textContent = error.message;
+      return;
+    }
+
+    el("qaProducts").replaceChildren();
+
+    for (const p of data || []) {
+      addProduct(p);
+    }
+
+    loaded = true;
+
+    el("qaMessage").textContent =
+      "請選擇商品並完成活動設定。";
+  };
+
+  el("qaSearch").oninput = () => {
+    const keyword = el("qaSearch").value
+      .trim().toLowerCase();
+
+    box.querySelectorAll(".quick-product")
+      .forEach(row => {
+        row.hidden =
+          !row.dataset.search.includes(keyword);
+      });
+  };
+
+  el("qaUsePromo").onchange = () => {
+    el("qaPromoFields").hidden =
+      !el("qaUsePromo").checked;
+  };
+
+  el("qaPromoType").onchange = () => {
+    const type = el("qaPromoType").value;
+
+    const labels = {
+      bundle_price: "組合優惠價格",
+      discount_rate: "折扣百分比（79折輸入79）",
+      second_item_price: "第二件價格",
+      discount_amount: "折抵金額"
+    };
+
+    el("qaValueLabel").textContent = labels[type];
+
+    el("qaQty").disabled =
+      type === "second_item_price";
+
+    if (type === "second_item_price") {
+      el("qaQty").value = 2;
+    }
+  };
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (!session) {
+      loaded = false;
+      box.hidden = true;
+      el("qaProducts").replaceChildren();
+      el("qaEligible").replaceChildren();
+      el("qaName").value = "";
+      el("qaNotes").value = "";
+      el("qaSearch").value = "";
+      el("qaPromoName").value = "";
+      el("qaPromoCode").value = "";
+      el("qaValue").value = "";
+      el("qaUsePromo").checked = false;
+      el("qaPromoFields").hidden = true;
+      el("qaMessage").textContent = "";
+      updateSelected();
+    }
+  });
+})();
+</script>
+<script>
+(() => {
+  if (typeof db === "undefined") return;
+
+  const el = id => document.getElementById(id);
+  const box = el("quickActivity");
+  const save = el("qaSave");
+
+  if (!box || !save) return;
+
+  const msg = el("qaMessage");
+
+  function normalizeCode(value) {
+    return value.normalize("NFKC")
+      .trim().toUpperCase();
+  }
+
+  function readNumber(value) {
+    if (String(value).trim() === "") return NaN;
+    return Number(value);
+  }
+
+  save.disabled = false;
+
+  save.onclick = async () => {
+    const name = el("qaName").value.trim();
+    const start = el("qaStart").value;
+    const end = el("qaEnd").value;
+
+    if (!name || !start || !end) {
+      msg.textContent = "請完整填寫活動基本資料";
+      return;
+    }
+
+    if (end < start) {
+      msg.textContent = "結單日期不可早於開始日期";
+      return;
+    }
+
+    const rows = [...box.querySelectorAll(
+      ".quick-product"
+    )].filter(row =>
+      row.querySelector(".qaCheck").checked
+    );
+
+    if (!rows.length) {
+      msg.textContent = "請至少選擇一項商品";
+      return;
+    }
+
+    const codes = new Set();
+    const products = [];
+
+    function checkCode(code) {
+      if (!code) return;
+
+      if (!/^[A-Z0-9]{1,8}$/.test(code)) {
+        throw new Error("代號只能使用英文字母或數字");
+      }
+
+      if (codes.has(code)) {
+        throw new Error("代號重複：" + code);
+      }
+
+      codes.add(code);
+    }
+
+    let promo = null;
+    let eligible = [];
+
+    try {
+      for (const row of rows) {
+        const check = row.querySelector(".qaCheck");
+
+        const price = readNumber(
+          row.querySelector(".qaPrice").value
+        );
+
+        const code = normalizeCode(
+          row.querySelector(".qaCode").value
+        );
+
+        if (!Number.isFinite(price) || price < 0) {
+          throw new Error(
+            "請確認 " + check.dataset.name + " 的價格"
+          );
+        }
+
+        checkCode(code);
+
+        products.push({
+          product_id: check.value,
+          activity_price: price,
+          option_code: code || null,
+          allow_single_purchase:
+            row.querySelector(".qaSingle").checked,
+          is_available: true
+        });
+      }
+
+      if (el("qaUsePromo").checked) {
+        const promoName =
+          el("qaPromoName").value.trim();
+
+        const type = el("qaPromoType").value;
+        const mode = el("qaMode").value;
+        const qty = Number(el("qaQty").value);
+
+        const value = readNumber(
+          el("qaValue").value
+        );
+
+        const code = normalizeCode(
+          el("qaPromoCode").value
+        );
+
+        if (!promoName ||
+            !Number.isInteger(qty) ||
+            qty < 1 ||
+            !Number.isFinite(value) ||
+            value < 0) {
+          throw new Error("請完整填寫優惠設定");
+        }
+
+        if (type === "discount_rate" &&
+            (value <= 0 || value > 100)) {
+          throw new Error("折扣請輸入大於0至100的數字");
+        }
+
+        checkCode(code);
+
+        eligible = [...box.querySelectorAll(
+          ".qaEligibleCheck:checked"
+        )].map(c => String(c.value));
+
+        if (!eligible.length) {
+          throw new Error("請選擇適用優惠的商品");
+        }
+
+        promo = {
+          promotion_name: promoName,
+          promotion_type: type,
+          min_quantity: qty,
+          bundle_price:
+            type === "bundle_price" ? value : null,
+          discount_rate:
+            type === "discount_rate"
+              ? value / 100 : null,
+          second_item_price:
+            type === "second_item_price"
+              ? value : null,
+          discount_amount:
+            type === "discount_amount" ? value : 0,
+          option_code: code || null,
+          purchase_mode: mode,
+          allow_mix: el("qaMix").checked,
+          repeat_discount: el("qaRepeat").checked,
+          is_active: true
+        };
+      }
+
+      for (const p of products) {
+        if (!p.allow_single_purchase &&
+            (!promo ||
+             promo.purchase_mode !== "bundle" ||
+             !eligible.includes(String(p.product_id)))) {
+          throw new Error(
+            "不允許單品購買的商品，必須設定適用的整組優惠"
+          );
+        }
+      }
+
+    } catch (e) {
+      msg.textContent = "⚠️ " + e.message;
+      return;
+    }
+
+    save.disabled = true;
+
+    const controls = [
+      ...box.querySelectorAll("input,select,button")
+    ];
+
+    const previous = controls.map(c => c.disabled);
+    controls.forEach(c => c.disabled = true);
+
+    msg.textContent = "正在建立活動，請稍候…";
+
+    let activityId = null;
+    let promotionId = null;
+
+    try {
+      const { data: activity, error: activityError } =
+        await db.from("activities")
+          .insert({
+            activity_name: name,
+            start_date: start,
+            end_date: end,
+            status: "Active",
+            notes: el("qaNotes").value.trim()
+          })
+          .select("id")
+          .single();
+
+      if (activityError) throw activityError;
+
+      activityId = activity.id;
+
+      const { data: added, error: productError } =
+        await db.from("activity_products")
+          .insert(products.map(p => ({
+            ...p,
+            activity_id: activityId
+          })))
+          .select("id,product_id");
+
+      if (productError) throw productError;
+
+      if (promo) {
+        const { data: promotion, error: promoError } =
+          await db.from("promotions")
+            .insert({
+              ...promo,
+              activity_id: activityId
+            })
+            .select("id")
+            .single();
+
+        if (promoError) throw promoError;
+
+        promotionId = promotion.id;
+
+        const links = added.filter(p =>
+          eligible.includes(String(p.product_id))
+        ).map(p => ({
+          promotion_id: promotionId,
+          activity_product_id: p.id,
+          is_active: true
+        }));
+
+        const { error: linkError } =
+          await db.from("promotion_products")
+            .insert(links);
+
+        if (linkError) throw linkError;
+      }
+
+      el("qaName").value = "";
+      el("qaNotes").value = "";
+      el("qaPromoName").value = "";
+      el("qaPromoCode").value = "";
+      el("qaValue").value = "";
+
+      el("qaUsePromo").checked = false;
+      el("qaPromoFields").hidden = true;
+
+      for (const row of rows) {
+        const check = row.querySelector(".qaCheck");
+        check.checked = false;
+        check.dispatchEvent(new Event("change"));
+        row.querySelector(".qaPrice").value = "";
+        row.querySelector(".qaCode").value = "";
+        row.querySelector(".qaSingle").checked = true;
+      }
+
+      msg.textContent =
+        "✅ 活動建立成功：" + name +
+        "，共 " + products.length + " 項商品" +
+        (promo ? "，1項優惠" : "");
+      home.dispatchEvent(new Event("activities-updated"));
+
+    } catch (e) {
+      let cleanupOK = true;
+
+      if (activityId) {
+        try {
+          if (promotionId) {
+            const a = await db
+              .from("promotion_products")
+              .delete()
+              .eq("promotion_id", promotionId);
+
+            if (a.error) throw a.error;
+
+            const b = await db.from("promotions")
+              .delete().eq("id", promotionId);
+
+            if (b.error) throw b.error;
+          }
+
+          const c = await db
+            .from("activity_products")
+            .delete()
+            .eq("activity_id", activityId);
+
+          if (c.error) throw c.error;
+
+          const d = await db.from("activities")
+            .delete().eq("id", activityId);
+
+          if (d.error) throw d.error;
+
+        } catch (cleanupError) {
+          cleanupOK = false;
+        }
+      }
+
+      msg.textContent =
+        "❌ 建立失敗：" + e.message +
+        (cleanupOK
+          ? "；請確認活動清單後再試"
+          : "；可能有未完成資料，請勿重複儲存");
+
+    } finally {
+      controls.forEach((c, i) => {
+        c.disabled = previous[i];
+      });
+
+      save.disabled = false;
+    }
+  };
+})();
+</script>
+<script>
+(() => {
+  const el = id => document.getElementById(id);
+  const quick = el("quickActivity");
+  const back = el("actBack");
+
+  if (!quick || !back) return;
+
+  const quickButton = quick.previousElementSibling;
+
+  if (quickButton) {
+    quickButton.textContent = "＋ 新增活動";
+  }
+
+  const advanced = document.createElement("details");
+
+  advanced.id = "activityAdvanced";
+  advanced.style.gridColumn = "1 / -1";
+  advanced.style.margin = "12px 0";
+  advanced.style.padding = "12px";
+  advanced.style.border = "1px solid #ddd";
+  advanced.style.borderRadius = "12px";
+
+  const summary = document.createElement("summary");
+
+  summary.textContent = "⚙️ 進階管理";
+  summary.style.cursor = "pointer";
+  summary.style.fontWeight = "bold";
+
+  advanced.append(summary);
+
+  const parent = back.parentElement;
+
+  const keywords = [
+    "設定購買方式",
+    "設定喊單代號",
+    "設定活動優惠",
+    "設定活動商品"
+  ];
+
+  const buttons = [...parent.children]
+    .filter(node =>
+      node.tagName === "BUTTON" &&
+      keywords.some(word =>
+        node.textContent.includes(word)
+      )
+    );
+
+  const groups = buttons.map(button => ({
+    button,
+    panel: button.nextElementSibling
+  }));
+
+  quick.after(advanced);
+
+  for (const group of groups) {
+    advanced.append(group.button);
+
+    if (group.panel &&
+        group.panel.tagName === "SECTION") {
+      advanced.append(group.panel);
+    }
+  }
+
+  const oldForm = el("actForm");
+  if (oldForm) { const h = oldForm.previousElementSibling; if(h?.tagName === "H3") advanced.append(h); advanced.append(oldForm, el("actMsg")); }
+  el("actList").addEventListener("click", () => { advanced.open = true; });
+  const heading = quick.querySelector("h2");
+
+  if (heading) {
+    heading.textContent = "新增活動";
+  }
+
+  const save = el("qaSave");
+
+  if (save) {
+    save.textContent = "儲存全部設定";
+  }
+})();
+</script>
+
+<script>
+(() => {
+ const el = id => document.getElementById(id);
+ const box = el('quickActivity'), save = el('qaSave');
+ const entry = box.previousElementSibling;
+ const area = document.createElement('section');
+ area.innerHTML = `<details><summary>📋 複製舊活動</summary><label>選擇舊活動</label><select id="copyActivity"></select><button type="button" id="copyLoad">讀取活動清單</button><button type="button" id="copyApply">帶入設定（不會立即儲存）</button></details>`;
+ box.querySelector('h2').after(area);
+ const msg = el('qaMessage');
+ el('copyLoad').onclick = async () => {
+  const {data,error} = await db.from('activities').select('id,activity_name,end_date').order('created_at',{ascending:false});
+  if(error){msg.textContent=error.message;return;}
+  el('copyActivity').replaceChildren(new Option('請選擇',''),...data.map(a=>new Option(a.activity_name+'｜'+(a.end_date||''),a.id)));
+ };
+ el('copyApply').onclick = async () => {
+  const id=el('copyActivity').value; if(!id){msg.textContent='請先選擇舊活動';return;}
+  if(!confirm('以舊活動設定取代目前尚未儲存的內容？')) return;
+  const controls=[...box.querySelectorAll('button,input,select')]; const states=controls.map(c=>c.disabled); controls.forEach(c=>c.disabled=true);
+  try {
+   const results=await Promise.all([db.from('activities').select('*').eq('id',id).single(),db.from('activity_products').select('*').eq('activity_id',id).eq('is_available',true),db.from('promotions').select('*').eq('activity_id',id).eq('is_active',true)]);
+   for(const r of results) if(r.error) throw r.error;
+   const [a,ps,prs]=results.map(r=>r.data);
+   if(prs.length>1) throw new Error('此活動有多項優惠，請使用進階管理，避免遺漏設定');
+   const p=prs[0]; let links=[];
+   if(p){const r=await db.from('promotion_products').select('*').eq('promotion_id',p.id).eq('is_active',true);if(r.error)throw r.error;links=r.data;if(links.some(l=>l.required_quantity!=null))throw new Error('此活動有指定口味數量，請使用進階管理');}
+   const rows=[...box.querySelectorAll('.quick-product')];
+   if(ps.some(p=>!rows.some(r=>r.querySelector('.qaCheck').value===String(p.product_id)))) throw new Error('商品清單缺少舊活動商品，請重新整理網頁');
+   el('qaName').value=a.activity_name; el('qaNotes').value=a.notes||'';
+   const d=new Date(); const today=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); el('qaStart').value=today;el('qaEnd').value=today;
+   for(const r of rows){const c=r.querySelector('.qaCheck');const item=ps.find(p=>String(p.product_id)===c.value);c.checked=!!item;c.dispatchEvent(new Event('change'));r.querySelector('.qaPrice').value=item?.activity_price??'';r.querySelector('.qaCode').value=item?.option_code??'';r.querySelector('.qaSingle').checked=item?.allow_single_purchase!==false;}
+   el('qaSearch').value='';el('qaSearch').dispatchEvent(new Event('input'));
+   el('qaUsePromo').checked=!!p;el('qaUsePromo').dispatchEvent(new Event('change'));
+   if(p){el('qaPromoName').value=p.promotion_name;el('qaPromoType').value=p.promotion_type;el('qaQty').value=p.min_quantity;el('qaPromoType').dispatchEvent(new Event('change'));el('qaValue').value=({bundle_price:p.bundle_price,discount_rate:p.discount_rate*100,second_item_price:p.second_item_price,discount_amount:p.discount_amount})[p.promotion_type]??'';el('qaPromoCode').value=p.option_code||'';el('qaMode').value=p.purchase_mode||'bundle';el('qaMix').checked=!!p.allow_mix;el('qaRepeat').checked=p.repeat_discount!==false;for(const c of box.querySelectorAll('.qaEligibleCheck'))c.checked=links.some(l=>ps.some(x=>String(x.product_id)===c.value&&String(x.id)===String(l.activity_product_id)));}
+   msg.textContent='已帶入舊活動，請確認日期、價格及優惠，再按儲存全部設定。';
+  }catch(e){msg.textContent='無法複製：'+e.message;}finally{controls.forEach((c,i)=>c.disabled=states[i]);el('qaPromoType').dispatchEvent(new Event('change'));}
+ };
+ entry.addEventListener('click',()=>{if(!box.hidden)el('copyLoad').click();});
+})();
+</script>
+<script>
+(()=>{
+const original=[...menu.querySelectorAll(':scope > button')];
+const imp=document.getElementById('imText').closest('section');
+home.insertBefore(imp,logoutButton);menu.classList.add('legacy-menu');
+const shell=document.createElement('div');shell.id='workspace';home.before(shell);shell.append(home);
+const nav=document.createElement('aside');nav.id='sideNav';nav.className='collapsed';shell.prepend(nav);
+nav.innerHTML='<button id="navToggle" type="button">☰ 功能選單</button><div id="navItems"></div>';
+const items=nav.querySelector('#navItems');nav.querySelector('#navToggle').onclick=()=>nav.classList.toggle('collapsed');
+const product=document.getElementById('productBack').closest('section'), activity=document.getElementById('actBack').closest('section');
+const placeholder=document.createElement('section');placeholder.hidden=true;home.insertBefore(placeholder,logoutButton);
+const heading=document.createElement('h2');placeholder.append(heading);const note=document.createElement('p');placeholder.append(note);
+const buttons=[];let current='';
+function go(name,source,b){
+ if(current===name){nav.classList.add('collapsed');return;}
+ if(home.querySelector('button:disabled[id="actSave"],button:disabled[id="imPreview"]') || (!product.hidden && product.querySelector('button[type="submit"]').disabled))return;
+ if(!activity.hidden){if(!confirm('切換功能？尚未儲存的活動資料可能遺失。'))return;document.getElementById('actBack').click();}
+ if(!product.hidden){if(!confirm('切換功能？尚未儲存的商品資料可能遺失。'))return;document.getElementById('productBack').click();if(!product.hidden)return;}
+ if(window.shopClose&&!window.shopClose())return;
+ imp.hidden=true;placeholder.hidden=true;test.hidden=true;status.hidden=true;
+ if(source && (name.includes('商品管理')||name.includes('團購活動')||name.includes('喊單匯入')))source.click();
+ else if(['一般商品訂貨','門市自用品'].includes(name)&&window.shopOpen){window.shopOpen(name);}
+ else {heading.textContent=name;note.textContent='功能尚未完成，暫無資料寫入。';placeholder.hidden=false;}
+ current=name;buttons.forEach(x=>x.classList.toggle('active',x===b));nav.classList.add('collapsed');nav.querySelector('#navToggle').textContent='☰ '+name;
+}
+function group(label,entries){const h=document.createElement('small');h.textContent=label;items.append(h);for(const [name,src] of entries){const b=document.createElement('button');b.type='button';b.textContent=name;b.onclick=()=>go(name,src,b);items.append(b);buttons.push(b);}}
+const find=t=>original.find(b=>b.textContent.includes(t));
+group('團購管理',['商品管理','團購活動','喊單匯入','客人訂單'].map(t=>[t,find(t)]));group('訂貨管理',[['一般商品訂貨',null],['門市自用品',null]]);group('到貨與出貨',['到貨管理','到貨通知','條碼結帳','出貨核對','標籤列印','訂單統計'].map(t=>[t,find(t)]));
+for(const id of ['productBack','actBack'])document.getElementById(id).addEventListener('click',()=>{current='';buttons.forEach(b=>b.classList.remove('active'));});
+const quick=document.getElementById('quickActivity');const details=[...quick.querySelectorAll(':scope > details')];const tabs=document.createElement('div');tabs.id='activityTabs';quick.querySelector('h2').after(tabs);
+const names=['活動資訊','活動商品','優惠設定'];const tb=names.map((n,i)=>{const b=document.createElement('button');b.type='button';b.textContent=n;b.onclick=()=>select(i);tabs.append(b);return b;});function select(i){details.forEach((d,j)=>{d.hidden=i!==j;d.open=true;});tb.forEach((b,j)=>b.classList.toggle('active',i===j));}select(0);
+// Keep the sidebar hidden before login, without changing existing auth handlers.
+const exit=document.createElement('button');exit.type='button';exit.textContent='登出';exit.style.cssText='margin-top:20px;border-top:1px solid #ccd5cf';exit.onclick=()=>{if(confirm('確定登出？'))logoutButton.click();};items.append(exit);logoutButton.style.display='none';
+const sync=()=>{nav.hidden=home.hidden;shell.style.display=home.hidden?'none':'';if(home.hidden){current='';placeholder.hidden=true;buttons.forEach(b=>b.classList.remove('active'));}};new MutationObserver(sync).observe(home,{attributes:true,attributeFilter:['hidden']});sync();
+})();
+</script><script>
+(()=>{
+const $=id=>document.getElementById(id), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const panel=document.createElement('section');panel.hidden=true;home.insertBefore(panel,logoutButton);let uid,rev,state,mode,area='',tab='盤點',dirty=false,busy=false;const fresh=()=>({areas:['倉庫','冷凍區','櫃檯'],items:[],history:[],freq:{},quant:{}});const today=()=>new Date().toLocaleDateString('sv-SE');
+function msg(s){if($('shopMsg'))$('shopMsg').textContent=s;}
+async function load(){const {data:{user}}=await db.auth.getUser();if(!user)throw Error('請登入');uid=user.id;const r=await db.from('shop_order_workspace').select('*').eq('user_id',uid).maybeSingle();if(r.error)throw r.error;state={...fresh(),...(r.data?.data||{})};rev=r.data?.revision??null;dirty=false;}
+async function save(){if(busy)return false;busy=true;try{const payload={data:state,revision:(rev??0)+1};const r=rev===null?await db.from('shop_order_workspace').insert({...payload,user_id:uid}).select('revision'):await db.from('shop_order_workspace').update(payload).eq('user_id',uid).eq('revision',rev).select('revision');if(r.error)throw r.error;if(!r.data.length)throw Error('另一台裝置已更新，請先備份目前輸入再重新載入');rev=r.data[0].revision;dirty=false;msg('已儲存');return true;}catch(e){msg('儲存失敗：'+e.message);return false;}finally{busy=false;}}
+const need=x=>Math.max(0,x.target-x.stock);
+function eligible(f){if(!f||f.type==='每天')return true;if(f.type==='手動')return false;const d=new Date();if(f.type==='指定星期')return f.days.split(',').map(Number).includes(d.getDay()||7);if(f.type==='每月指定日')return f.days.split(',').map(Number).includes(d.getDate());if(f.type==='每隔N天'){const n=Number(f.days),a=Date.parse(f.start),b=Date.parse(today());return n>0&&Number.isFinite(a)&&b>=a&&((b-a)/86400000)%n===0;}return false;}
+function wheel(v,cb){const wrap=document.createElement('div');wrap.className='wheelWrap';const w=document.createElement('div');w.className='numberWheel';w.tabIndex=0;w.setAttribute('role','spinbutton');w.setAttribute('aria-label','數量');w.setAttribute('aria-valuemin','0');const max=Math.max(999,Number(v)||0);w.setAttribute('aria-valuemax',max);const frag=document.createDocumentFragment();for(let i=0;i<=max;i++){const d=document.createElement('div');d.textContent=i;frag.append(d);}w.append(frag);wrap.append(w);let last=Math.max(0,Number(v)||0);function paint(n,notify){w.children[last]?.classList.remove('chosen');w.children[n]?.classList.add('chosen');w.setAttribute('aria-valuenow',n);if(n!==last&&notify){cb(n);dirty=true;}last=n;}paint(last,false);requestAnimationFrame(()=>{w.scrollTop=last*36;w.addEventListener('scroll',()=>paint(Math.max(0,Math.min(max,Math.round(w.scrollTop/36))),true),{passive:true});});w.addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();w.scrollTop=Math.max(0,Math.min(max,last+(e.key==='ArrowUp'?-1:1)))*36;}});return wrap;}
+function freqForm(f={}){const days=!f.type||f.type==='每天'?[1,2,3,4,5,6,7]:f.type==='指定星期'?String(f.days||'').split(',').map(Number):[];return `<div class="weekDays" id="sfDays">${[7,1,2,3,4,5,6].map((d,i)=>`<label><input type="checkbox" value="${d}" ${days.includes(d)?'checked':''}><span>${'日一二三四五六'[i]}</span></label>`).join('')}</div><small>可複選星期；全選代表每天。${f.type&&!['每天','指定星期'].includes(f.type)?'舊週期請重新選擇星期。':''}</small>`;}
+const readFreq=()=>{const days=[...$('sfDays').querySelectorAll('input:checked')].map(x=>x.value);if(!days.length)throw Error('請至少選擇一天');return {type:days.length===7?'每天':'指定星期',days:days.join(',')};};
+function base(){panel.innerHTML=`<h2>${mode}</h2><div class="shopTabs" id="shopTabs"></div><div id="shopContent"></div><p id="shopMsg" role="status"></p>`;const tabs=mode==='門市自用品'?['盤點','用品設定','待訂清單','歷史紀錄']:['今日訂貨','全部商品','歷史紀錄'];for(const t of tabs){const b=document.createElement('button');b.textContent=t;b.className=t===tab?'active':'';b.onclick=()=>{tab=t;render();};$('shopTabs').append(b);}}
+function button(parent,label,fn){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=fn;parent.append(b);return b;}
+async function photo(x,img){if(!x.photo)return;const r=await db.storage.from('shop-supply-photos').createSignedUrl(x.photo,600);if(r.data)img.src=r.data.signedUrl;}
+function render(){base();const c=$('shopContent');if(tab==='歷史紀錄'){for(const h of state.history.filter(h=>h.mode===mode).slice().reverse()){const p=document.createElement('pre');p.textContent=h.date+'\n'+h.lines.join('\n');c.append(p);}return;}
+if(mode==='一般商品訂貨'){general(c);return;}
+if(tab==='用品設定'){button(c,'＋ 新增區域',()=>{const a=prompt('區域名稱')?.trim();if(a&&!state.areas.includes(a)){state.areas.push(a);dirty=true;render();}});button(c,'＋ 新增用品',()=>edit());for(const x of state.items)button(c,x.area+'｜'+x.name,()=>edit(x));button(c,'儲存設定',save);return;}
+if(tab==='待訂清單'){const lines=state.items.filter(x=>need(x)>0&&eligible(x.freq)).map(x=>`${x.area}｜${x.name} ${need(x)}${x.unit}`);c.innerHTML='<pre>'+esc(lines.join('\n')||'無需訂貨')+'</pre>';button(c,'複製清單',()=>navigator.clipboard.writeText(lines.join('\n')).then(()=>msg('已複製')).catch(()=>msg('無法複製')));button(c,'確認已訂貨',async()=>{if(!lines.length||!confirm('確認已送出這些訂貨？'))return;state.history.push({mode,date:today(),lines});dirty=true;if(await save())render();});return;}
+if(!state.areas.includes(area))area=state.areas[0];const bar=document.createElement('div');bar.className='shopTabs';c.append(bar);for(const a of state.areas){const b=button(bar,a,()=>{area=a;render();});b.className=a===area?'active':'';}for(const x of state.items.filter(x=>x.area===area)){const row=document.createElement('div');row.className='shopRow';row.innerHTML=`<img alt="" hidden><div><b>${esc(x.name)}</b><small>${esc(x.code)}｜${esc(x.unit)}</small></div><div>標準<strong>${x.target}</strong></div><div class="stock">現貨</div><div>需訂<strong class="need ${need(x)===0?'zero':''}">${need(x)}</strong></div>`;const img=row.querySelector('img');if(x.photo){img.hidden=false;photo(x,img);}row.querySelector('.stock').append(wheel(x.stock,n=>{x.stock=n;row.querySelector('.need').textContent=need(x);row.querySelector('.need').classList.toggle('zero',need(x)===0);}));c.append(row);}button(c,'儲存盤點',save);}
+async function edit(old){const c=$('shopContent'),x=old||{id:crypto.randomUUID(),name:'',code:'',barcode:'',area:state.areas[0],unit:'條',target:0,stock:0,pending:0,freq:{type:'每天'}};c.innerHTML=`<label>用品名稱</label><input id="sn" value="${esc(x.name)}"><label>品號</label><input id="sc" value="${esc(x.code)}"><label>條碼</label><input id="sb" value="${esc(x.barcode)}"><div id="barcodeTools"></div><label>區域</label><select id="sa">${state.areas.map(a=>`<option ${a===x.area?'selected':''}>${esc(a)}</option>`).join('')}</select><label>單位</label><input id="su" value="${esc(x.unit)}"><label>標準庫存</label><input id="st" type="number" min="0" value="${x.target}"><label>訂貨頻率</label>${freqForm(x.freq)}<label>用品照片</label><input id="sp" type="file" accept="image/*"><div id="shopEditButtons"></div>`;barcodeTools($('barcodeTools'),$('sb'),$('sc'));button($('shopEditButtons'),'儲存用品',async()=>{const name=$('sn').value.trim(),code=$('sc').value.trim(),barcode=$('sb').value.trim(),target=Number($('st').value);if(!name||!code||!Number.isInteger(target)||target<0||state.items.some(y=>y.id!==x.id&&(y.code===code||(barcode&&y.barcode===barcode))))return msg('請確認名稱、品號、庫存及條碼不可重複');let photoPath=x.photo;try{const frequency=readFreq();const f=$('sp').files[0];if(f){const bitmap=await createImageBitmap(f);const canvas=document.createElement('canvas'),scale=Math.min(1,640/Math.max(bitmap.width,bitmap.height));canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.65));photoPath=uid+'/'+x.id+'.jpg';const r=await db.storage.from('shop-supply-photos').upload(photoPath,blob,{upsert:true,contentType:'image/jpeg'});if(r.error)throw r.error;}const y={...x,name,code,barcode,target,area:$('sa').value,unit:$('su').value,freq:frequency,photo:photoPath};state.items=state.items.filter(z=>z.id!==x.id).concat(y);dirty=true;if(await save())render();}catch(e){msg(e.message);}});button($('shopEditButtons'),'返回',render);}
+function barcodeTools(c,input,code){const file=document.createElement('input');file.type='file';file.accept='image/*';file.setAttribute('capture','environment');c.append(file);file.onchange=async()=>{try{if(!file.files[0])return;const url=URL.createObjectURL(file.files[0]);try{const reader=new ZXingBrowser.BrowserMultiFormatReader();const r=await reader.decodeFromImageUrl(url);input.value=r.getText();msg('辨識成功，請核對原始數字');}finally{URL.revokeObjectURL(url);}}catch(e){msg('無法辨識，請手動輸入原始號碼');}};button(c,'產生內部條碼',()=>{if(input.value)return msg('已有條碼，不覆蓋');if(!code.value.trim())return msg('請先輸入品號');input.value='SHOP-'+code.value.trim();});button(c,'顯示條碼',()=>{try{let svg=c.querySelector('svg');if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');c.append(svg);}const v=input.value.trim();const format=v.startsWith('SHOP-')?'CODE128':/^\d{13}$/.test(v)?'EAN13':/^\d{8}$/.test(v)?'EAN8':/^\d{12}$/.test(v)?'UPC':'CODE128';JsBarcode(svg,v,{format,width:1.5,height:55});}catch(e){msg('條碼格式不符，請核對原始條碼');}});}
+async function general(c){const r=await db.from('products').select('id,product_name,product_code,barcode').eq('is_active',true).order('product_name');if(r.error)return msg(r.error.message);if(c!==$('shopContent'))return;const ps=r.data.filter(p=>tab==='全部商品'||eligible(state.freq[p.id]));for(const p of ps){const row=document.createElement('div');row.className='shopRow';row.innerHTML=`<div><b>${esc(p.product_name)}</b><small>${esc(p.product_code)}</small></div>`;row.append(wheel(state.quant[p.id]||0,n=>state.quant[p.id]=n));button(row,'頻率',()=>{c.innerHTML=freqForm(state.freq[p.id]);button(c,'儲存頻率',async()=>{try{state.freq[p.id]=readFreq();dirty=true;if(await save())render();}catch(e){msg(e.message);}});});c.append(row);}button(c,'儲存訂貨紀錄',async()=>{const lines=ps.filter(p=>state.quant[p.id]>0).map(p=>p.product_code+' '+p.product_name+' × '+state.quant[p.id]);if(!lines.length)return msg('請選擇數量');state.history.push({mode,date:today(),lines});for(const p of ps)delete state.quant[p.id];dirty=true;if(await save())render();});}
+window.shopOpen=async name=>{mode=name;tab=name==='門市自用品'?'盤點':'今日訂貨';panel.hidden=false;panel.textContent='讀取中…';try{await load();render();}catch(e){panel.textContent='無法讀取訂貨資料：'+e.message+'。請先執行 setup.sql。';}};window.shopClose=()=>{if(busy)return false;if(dirty&&!confirm('尚未儲存，確定離開？'))return false;panel.hidden=true;return true;};db.auth.onAuthStateChange((e)=>{if(e==='SIGNED_OUT'){state=null;uid=null;dirty=false;panel.hidden=true;panel.replaceChildren();}});
+})();
+
+</script></body></html>
