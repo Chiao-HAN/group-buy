@@ -47,7 +47,9 @@ button {
 input[type=checkbox] { width:auto; margin-right:8px; }
 select, textarea { width:100%; padding:12px; font-size:16px; border:1px solid #ccd5cf; border-radius:10px; }
 </style>
-</head>
+<style>
+body{padding:12px} main:has(#home:not([hidden])){max-width:1200px;margin:12px auto;padding:16px} #home{min-width:0} #workspace{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start} #sideNav{position:sticky;top:10px;background:#edf4ef;border-radius:12px;padding:10px} #sideNav button{margin:3px 0;padding:10px;text-align:left;background:transparent;color:#34443c} #sideNav button.active{background:#527c65;color:white} #sideNav small{display:block;margin:12px 5px 4px;color:#52685b} #workspace #home>p:first-child,#workspace #home>p:nth-child(2){display:none} #workspace #home>div.legacy-menu{display:none!important} #navToggle{display:none} #activityTabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0} #activityTabs button{width:auto;flex:1;margin:0;padding:10px;background:#edf4ef;color:#34443c} #activityTabs button.active{background:#527c65;color:white} #quickActivity>details>summary{display:none} #quickActivity>details{padding:8px} #workspace input,#workspace select,#workspace textarea{max-width:100%;min-width:0} #workspace section{min-width:0;overflow-wrap:anywhere} @media(max-width:650px){#workspace{grid-template-columns:minmax(0,1fr);gap:8px} #sideNav{position:static} #navToggle{display:block;margin:0 0 8px} #sideNav.collapsed #navItems{display:none} main:has(#home:not([hidden])){padding:10px} #activityTabs button{font-size:14px;padding:8px}}
+</style><style>.shopTabs{display:flex;flex-wrap:wrap;gap:5px}.shopTabs button{width:auto;flex:1;margin:4px 0;background:#edf4ef;color:#34443c;padding:8px}.shopTabs button.active{background:#527c65;color:white}.shopRow{display:flex;align-items:center;gap:8px;border-bottom:1px solid #ddd;padding:12px 0;flex-wrap:wrap}.shopRow>div:first-of-type{flex:1;min-width:80px}.shopRow small,.shopRow strong{display:block}.shopRow strong{font-size:24px}.shopRow .need{color:#a52b2b}.shopRow img{width:55px;height:65px;object-fit:contain}.shopWheel{width:65px;padding:5px;font-size:22px}.shopRow button{width:auto;margin:0;padding:6px}#shopContent pre{white-space:pre-wrap}</style><script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script></head>
 <body>
 <main>
 <h1>團購訂單小幫手</h1>
@@ -178,7 +180,7 @@ db.auth.onAuthStateChange(() => {
 </script><script>
 (() => {
   const fields = [
-    ["product_code","商品編號","text"],
+    ["product_code","商品品號","text"],
     ["product_name","商品名稱","text"],
     ["barcode","商品條碼","text"],
     ["category","商品分類","text"],
@@ -2976,4 +2978,64 @@ db.auth.onAuthStateChange(() => {
  entry.addEventListener('click',()=>{if(!box.hidden)el('copyLoad').click();});
 })();
 </script>
-</body></html>
+<script>
+(()=>{
+const original=[...menu.querySelectorAll(':scope > button')];
+const imp=document.getElementById('imText').closest('section');
+home.insertBefore(imp,logoutButton);menu.classList.add('legacy-menu');
+const shell=document.createElement('div');shell.id='workspace';home.before(shell);shell.append(home);
+const nav=document.createElement('aside');nav.id='sideNav';nav.className='collapsed';shell.prepend(nav);
+nav.innerHTML='<button id="navToggle" type="button">☰ 功能選單</button><div id="navItems"></div>';
+const items=nav.querySelector('#navItems');nav.querySelector('#navToggle').onclick=()=>nav.classList.toggle('collapsed');
+const product=document.getElementById('productBack').closest('section'), activity=document.getElementById('actBack').closest('section');
+const placeholder=document.createElement('section');placeholder.hidden=true;home.insertBefore(placeholder,logoutButton);
+const heading=document.createElement('h2');placeholder.append(heading);const note=document.createElement('p');placeholder.append(note);
+const buttons=[];let current='';
+function go(name,source,b){
+ if(current===name){nav.classList.add('collapsed');return;}
+ if(home.querySelector('button:disabled[id="actSave"],button:disabled[id="imPreview"]') || (!product.hidden && product.querySelector('button[type="submit"]').disabled))return;
+ if(!activity.hidden){if(!confirm('切換功能？尚未儲存的活動資料可能遺失。'))return;document.getElementById('actBack').click();}
+ if(!product.hidden){if(!confirm('切換功能？尚未儲存的商品資料可能遺失。'))return;document.getElementById('productBack').click();if(!product.hidden)return;}
+ if(window.shopClose&&!window.shopClose())return;
+ imp.hidden=true;placeholder.hidden=true;test.hidden=true;status.hidden=true;
+ if(source && (name.includes('商品管理')||name.includes('團購活動')||name.includes('喊單匯入')))source.click();
+ else if(['一般商品訂貨','門市自用品'].includes(name)&&window.shopOpen){window.shopOpen(name);}
+ else {heading.textContent=name;note.textContent='功能尚未完成，暫無資料寫入。';placeholder.hidden=false;}
+ current=name;buttons.forEach(x=>x.classList.toggle('active',x===b));nav.classList.add('collapsed');nav.querySelector('#navToggle').textContent='☰ '+name;
+}
+function group(label,entries){const h=document.createElement('small');h.textContent=label;items.append(h);for(const [name,src] of entries){const b=document.createElement('button');b.type='button';b.textContent=name;b.onclick=()=>go(name,src,b);items.append(b);buttons.push(b);}}
+const find=t=>original.find(b=>b.textContent.includes(t));
+group('團購管理',['商品管理','團購活動','喊單匯入','客人訂單'].map(t=>[t,find(t)]));group('訂貨管理',[['一般商品訂貨',null],['門市自用品',null]]);group('到貨與出貨',['到貨管理','到貨通知','條碼結帳','出貨核對','標籤列印','訂單統計'].map(t=>[t,find(t)]));
+for(const id of ['productBack','actBack'])document.getElementById(id).addEventListener('click',()=>{current='';buttons.forEach(b=>b.classList.remove('active'));});
+const quick=document.getElementById('quickActivity');const details=[...quick.querySelectorAll(':scope > details')];const tabs=document.createElement('div');tabs.id='activityTabs';quick.querySelector('h2').after(tabs);
+const names=['活動資訊','活動商品','優惠設定'];const tb=names.map((n,i)=>{const b=document.createElement('button');b.type='button';b.textContent=n;b.onclick=()=>select(i);tabs.append(b);return b;});function select(i){details.forEach((d,j)=>{d.hidden=i!==j;d.open=true;});tb.forEach((b,j)=>b.classList.toggle('active',i===j));}select(0);
+// Keep the sidebar hidden before login, without changing existing auth handlers.
+const sync=()=>{nav.hidden=home.hidden;shell.style.display=home.hidden?'none':'';if(home.hidden){current='';placeholder.hidden=true;buttons.forEach(b=>b.classList.remove('active'));}};new MutationObserver(sync).observe(home,{attributes:true,attributeFilter:['hidden']});sync();
+})();
+</script><script>
+(()=>{
+const $=id=>document.getElementById(id), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const panel=document.createElement('section');panel.hidden=true;home.insertBefore(panel,logoutButton);let uid,rev,state,mode,area='',tab='盤點',dirty=false,busy=false;const fresh=()=>({areas:['倉庫','冷凍區','櫃檯'],items:[],history:[],freq:{},quant:{}});const today=()=>new Date().toLocaleDateString('sv-SE');
+function msg(s){if($('shopMsg'))$('shopMsg').textContent=s;}
+async function load(){const {data:{user}}=await db.auth.getUser();if(!user)throw Error('請登入');uid=user.id;const r=await db.from('shop_order_workspace').select('*').eq('user_id',uid).maybeSingle();if(r.error)throw r.error;state={...fresh(),...(r.data?.data||{})};rev=r.data?.revision??null;dirty=false;}
+async function save(){if(busy)return false;busy=true;try{const payload={data:state,revision:(rev??0)+1};const r=rev===null?await db.from('shop_order_workspace').insert({...payload,user_id:uid}).select('revision'):await db.from('shop_order_workspace').update(payload).eq('user_id',uid).eq('revision',rev).select('revision');if(r.error)throw r.error;if(!r.data.length)throw Error('另一台裝置已更新，請先備份目前輸入再重新載入');rev=r.data[0].revision;dirty=false;msg('已儲存');return true;}catch(e){msg('儲存失敗：'+e.message);return false;}finally{busy=false;}}
+const need=x=>Math.max(0,x.target-x.stock-x.pending);const freqOptions=['每天','指定星期','每隔N天','每月指定日','手動'];
+function eligible(f){if(!f||f.type==='每天')return true;if(f.type==='手動')return false;const d=new Date();if(f.type==='指定星期')return f.days.split(',').map(Number).includes(d.getDay()||7);if(f.type==='每月指定日')return f.days.split(',').map(Number).includes(d.getDate());if(f.type==='每隔N天'){const n=Number(f.days),a=Date.parse(f.start),b=Date.parse(today());return n>0&&Number.isFinite(a)&&b>=a&&((b-a)/86400000)%n===0;}return false;}
+function wheel(v,cb){const s=document.createElement('select');s.className='shopWheel';for(let i=0;i<=Math.max(200,v);i++)s.add(new Option(i,i));s.value=v;s.onchange=()=>{cb(+s.value);dirty=true;};return s;}
+function freqForm(f={}){return `<select id="sfType">${freqOptions.map(t=>`<option ${f.type===t?'selected':''}>${t}</option>`).join('')}</select><input id="sfDays" placeholder="星期1–7／每月日期（逗號分隔）／間隔天數" value="${esc(f.days)}"><label>週期起算日</label><input id="sfStart" type="date" value="${esc(f.start||today())}">`;}
+const readFreq=()=>({type:$('sfType').value,days:$('sfDays').value,start:$('sfStart').value});
+function base(){panel.innerHTML=`<h2>${mode}</h2><div class="shopTabs" id="shopTabs"></div><div id="shopContent"></div><p id="shopMsg" role="status"></p>`;const tabs=mode==='門市自用品'?['盤點','用品設定','待訂清單','歷史紀錄']:['今日訂貨','全部商品','歷史紀錄'];for(const t of tabs){const b=document.createElement('button');b.textContent=t;b.className=t===tab?'active':'';b.onclick=()=>{tab=t;render();};$('shopTabs').append(b);}}
+function button(parent,label,fn){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=fn;parent.append(b);return b;}
+async function photo(x,img){if(!x.photo)return;const r=await db.storage.from('shop-supply-photos').createSignedUrl(x.photo,600);if(r.data)img.src=r.data.signedUrl;}
+function render(){base();const c=$('shopContent');if(tab==='歷史紀錄'){for(const h of state.history.filter(h=>h.mode===mode).slice().reverse()){const p=document.createElement('pre');p.textContent=h.date+'\n'+h.lines.join('\n');c.append(p);}return;}
+if(mode==='一般商品訂貨'){general(c);return;}
+if(tab==='用品設定'){button(c,'＋ 新增區域',()=>{const a=prompt('區域名稱')?.trim();if(a&&!state.areas.includes(a)){state.areas.push(a);dirty=true;render();}});button(c,'＋ 新增用品',()=>edit());for(const x of state.items)button(c,x.area+'｜'+x.name,()=>edit(x));button(c,'儲存設定',save);return;}
+if(tab==='待訂清單'){const lines=state.items.filter(x=>need(x)>0&&eligible(x.freq)).map(x=>`${x.area}｜${x.name} ${need(x)}${x.unit}`);c.innerHTML='<pre>'+esc(lines.join('\n')||'無需訂貨')+'</pre>';button(c,'複製清單',()=>navigator.clipboard.writeText(lines.join('\n')).then(()=>msg('已複製')).catch(()=>msg('無法複製')));button(c,'確認已訂貨',async()=>{if(!lines.length||!confirm('確認已送出這些訂貨？'))return;for(const x of state.items)if(eligible(x.freq))x.pending+=need(x);state.history.push({mode,date:today(),lines});dirty=true;if(await save())render();});return;}
+if(!state.areas.includes(area))area=state.areas[0];const bar=document.createElement('div');bar.className='shopTabs';c.append(bar);for(const a of state.areas){const b=button(bar,a,()=>{area=a;render();});b.className=a===area?'active':'';}for(const x of state.items.filter(x=>x.area===area)){const row=document.createElement('div');row.className='shopRow';row.innerHTML=`<img alt="" hidden><div><b>${esc(x.name)}</b><small>${esc(x.code)}｜${esc(x.unit)}</small></div><div>標準<strong>${x.target}</strong></div><div class="stock">現貨</div><div>未到<strong>${x.pending}</strong></div><div>需訂<strong class="need">${need(x)}</strong></div>`;const img=row.querySelector('img');if(x.photo){img.hidden=false;photo(x,img);}row.querySelector('.stock').append(wheel(x.stock,n=>{x.stock=n;row.querySelector('.need').textContent=need(x);}));c.append(row);if(x.pending)button(c,'登記到貨：'+x.name,()=>{const n=Number(prompt('到貨數量',x.pending));if(Number.isInteger(n)&&n>0&&n<=x.pending){x.pending-=n;x.stock+=n;dirty=true;render();}});}button(c,'儲存盤點',save);}
+async function edit(old){const c=$('shopContent'),x=old||{id:crypto.randomUUID(),name:'',code:'',barcode:'',area:state.areas[0],unit:'條',target:0,stock:0,pending:0,freq:{type:'每天'}};c.innerHTML=`<label>用品名稱</label><input id="sn" value="${esc(x.name)}"><label>品號</label><input id="sc" value="${esc(x.code)}"><label>條碼</label><input id="sb" value="${esc(x.barcode)}"><div id="barcodeTools"></div><label>區域</label><select id="sa">${state.areas.map(a=>`<option ${a===x.area?'selected':''}>${esc(a)}</option>`).join('')}</select><label>單位</label><input id="su" value="${esc(x.unit)}"><label>標準庫存</label><input id="st" type="number" min="0" value="${x.target}"><label>訂貨頻率</label>${freqForm(x.freq)}<label>用品照片</label><input id="sp" type="file" accept="image/*"><div id="shopEditButtons"></div>`;barcodeTools($('barcodeTools'),$('sb'),$('sc'));button($('shopEditButtons'),'儲存用品',async()=>{const name=$('sn').value.trim(),code=$('sc').value.trim(),barcode=$('sb').value.trim(),target=Number($('st').value);if(!name||!code||!Number.isInteger(target)||target<0||state.items.some(y=>y.id!==x.id&&(y.code===code||(barcode&&y.barcode===barcode))))return msg('請確認名稱、品號、庫存及條碼不可重複');let photoPath=x.photo;try{const f=$('sp').files[0];if(f){const bitmap=await createImageBitmap(f);const canvas=document.createElement('canvas'),scale=Math.min(1,640/Math.max(bitmap.width,bitmap.height));canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.65));photoPath=uid+'/'+x.id+'.jpg';const r=await db.storage.from('shop-supply-photos').upload(photoPath,blob,{upsert:true,contentType:'image/jpeg'});if(r.error)throw r.error;}const y={...x,name,code,barcode,target,area:$('sa').value,unit:$('su').value,freq:readFreq(),photo:photoPath};state.items=state.items.filter(z=>z.id!==x.id).concat(y);dirty=true;if(await save())render();}catch(e){msg(e.message);}});button($('shopEditButtons'),'返回',render);}
+function barcodeTools(c,input,code){const file=document.createElement('input');file.type='file';file.accept='image/*';file.setAttribute('capture','environment');c.append(file);file.onchange=async()=>{try{if(!file.files[0])return;const url=URL.createObjectURL(file.files[0]);try{const reader=new ZXingBrowser.BrowserMultiFormatReader();const r=await reader.decodeFromImageUrl(url);input.value=r.getText();msg('辨識成功，請核對原始數字');}finally{URL.revokeObjectURL(url);}}catch(e){msg('無法辨識，請手動輸入原始號碼');}};button(c,'產生內部條碼',()=>{if(input.value)return msg('已有條碼，不覆蓋');if(!code.value.trim())return msg('請先輸入品號');input.value='SHOP-'+code.value.trim();});button(c,'顯示條碼',()=>{try{let svg=c.querySelector('svg');if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');c.append(svg);}const v=input.value.trim();const format=v.startsWith('SHOP-')?'CODE128':/^\d{13}$/.test(v)?'EAN13':/^\d{8}$/.test(v)?'EAN8':/^\d{12}$/.test(v)?'UPC':'CODE128';JsBarcode(svg,v,{format,width:1.5,height:55});}catch(e){msg('條碼格式不符，請核對原始條碼');}});}
+async function general(c){const r=await db.from('products').select('id,product_name,product_code,barcode').eq('is_active',true).order('product_name');if(r.error)return msg(r.error.message);if(c!==$('shopContent'))return;const ps=r.data.filter(p=>tab==='全部商品'||eligible(state.freq[p.id]));for(const p of ps){const row=document.createElement('div');row.className='shopRow';row.innerHTML=`<div><b>${esc(p.product_name)}</b><small>${esc(p.product_code)}</small></div>`;row.append(wheel(state.quant[p.id]||0,n=>state.quant[p.id]=n));button(row,'頻率',()=>{c.innerHTML=freqForm(state.freq[p.id]);button(c,'儲存頻率',async()=>{state.freq[p.id]=readFreq();dirty=true;if(await save())render();});});c.append(row);}button(c,'儲存訂貨紀錄',async()=>{const lines=ps.filter(p=>state.quant[p.id]>0).map(p=>p.product_code+' '+p.product_name+' × '+state.quant[p.id]);if(!lines.length)return msg('請選擇數量');state.history.push({mode,date:today(),lines});for(const p of ps)delete state.quant[p.id];dirty=true;if(await save())render();});}
+window.shopOpen=async name=>{mode=name;tab=name==='門市自用品'?'盤點':'今日訂貨';panel.hidden=false;panel.textContent='讀取中…';try{await load();render();}catch(e){panel.textContent='無法讀取訂貨資料：'+e.message+'。請先執行 setup.sql。';}};window.shopClose=()=>{if(busy)return false;if(dirty&&!confirm('尚未儲存，確定離開？'))return false;panel.hidden=true;return true;};db.auth.onAuthStateChange((e)=>{if(e==='SIGNED_OUT'){state=null;uid=null;dirty=false;panel.hidden=true;panel.replaceChildren();}});
+})();
+
+</script></body></html>
